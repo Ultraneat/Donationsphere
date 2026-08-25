@@ -1989,7 +1989,7 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim() || !newDesc.trim()) {
-      alert("Veuillez remplir les champs obligatoires");
+      showToast("Veuillez remplir les champs obligatoires", "error");
       return;
     }
 
@@ -2030,10 +2030,10 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       setDonationImageStats(null);
       setCustomSpecs({});
       setAddedTestimonials([]);
-      alert("Don solidaire et témoignages publiés avec succès !");
+      showToast("Don solidaire et témoignages publiés avec succès !", "success");
       setActiveTab("overview");
     } else {
-      alert("Une erreur est survenue lors de la création du don.");
+      showToast("Une erreur est survenue lors de la création du don.", "error");
     }
   };
 
@@ -6371,8 +6371,8 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
               {/* Liste des modes existants */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {paymentMethods.map((method) => (
-                  <div key={method.id} className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4 relative overflow-hidden transition-all hover:shadow-md">
+                {paymentMethods.map((method, idx) => (
+                  <div key={`method-${method.id || idx}-${idx}`} className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4 relative overflow-hidden transition-all hover:shadow-md">
                     {/* Badge type */}
                     <div className="absolute top-4 right-4 flex items-center gap-2">
                       <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase ${

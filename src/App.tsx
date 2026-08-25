@@ -1013,7 +1013,7 @@ export default function App() {
         setAuthPassword("");
       } else {
         const err = await res.json();
-        setAuthError(err.error || "Identifiants invalides");
+        setAuthError(err.error || "Adresse e-mail ou mot de passe incorrect.");
       }
     } catch (e) {
       console.error("Erreur de connexion", e);

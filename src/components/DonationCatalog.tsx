@@ -1009,7 +1009,7 @@ export default function DonationCatalog({
                       </h4>
                       <div className="flex gap-3 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory -mx-2 px-2 scrollbar-hide">
                         {donationTestimonials.map((t, idx) => (
-                          <div key={`don-testi-${t.id || idx}`} className="min-w-[260px] max-w-[260px] snap-center p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2.5 flex-shrink-0">
+                          <div key={`don-testi-${t.id || 'id'}-${idx}`} className="min-w-[260px] max-w-[260px] snap-center p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2.5 flex-shrink-0">
                             <div className="flex justify-between items-center">
                               <span className="text-xs font-black text-slate-900 truncate pr-2">{t.author_name}</span>
                               <span className="text-[8px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide flex-shrink-0">
@@ -1595,7 +1595,7 @@ export default function DonationCatalog({
                       <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Champs d'informations requis</h4>
                       
                       {adminDefinedFields.map((field, idx) => (
-                        <div key={field.key || `field-${idx}`} className="space-y-1.5">
+                        <div key={`admin-field-${field.key || 'key'}-${idx}`} className="space-y-1.5">
                           <label className="text-xs font-bold text-slate-700 block">{field.label}</label>
                           {field.type === "textarea" ? (
                             <textarea

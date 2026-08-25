@@ -1154,7 +1154,7 @@ export default function CandidateDashboard({
 
                     return (
                       <div 
-                        key={`user-app-${app.id || appIdx}`} 
+                        key={`user-app-${app.id || 'new'}-${appIdx}`} 
                         className={`bg-white p-5 rounded-xl border transition-all ${
                           application?.id === app.id ? "border-indigo-200 ring-2 ring-indigo-500/10 shadow-md" : "border-slate-100 shadow-sm hover:border-slate-200"
                         } flex flex-col md:flex-row md:items-center justify-between gap-4`}
@@ -1697,7 +1697,7 @@ export default function CandidateDashboard({
                                   { label: "Dotation directe par chèque d'aide", desc: "Financement octroyé sous forme de bons et d'aide alimentaire d'urgence." }
                                 ].map((opt, oIdx) => (
                                   <button
-                                    key={oIdx}
+                                    key={`fin-mode-${oIdx}`}
                                     onClick={() => setSelectedTransferMode(opt.label)}
                                     type="button"
                                     className={`w-full text-left p-3 rounded-lg border text-xs transition-all flex flex-col gap-0.5 cursor-pointer ${
@@ -1722,7 +1722,7 @@ export default function CandidateDashboard({
                                   { label: "Livraison directe par l'agent de liaison", desc: "Notre agent vient directement à votre rencontre pour faire le point de vive voix." }
                                 ].map((opt, oIdx) => (
                                   <button
-                                    key={oIdx}
+                                    key={`log-mode-${oIdx}`}
                                     onClick={() => setSelectedTransferMode(opt.label)}
                                     type="button"
                                     className={`w-full text-left p-3 rounded-lg border text-xs transition-all flex items-center gap-3 cursor-pointer ${
@@ -2212,11 +2212,11 @@ export default function CandidateDashboard({
                         {paymentMethods.length === 0 ? (
                           <p className="text-[10px] text-slate-400 italic">Aucun mode de paiement disponible pour le moment.</p>
                         ) : (
-                          paymentMethods.map((method) => {
+                          paymentMethods.map((method, idx) => {
                             const isSelected = selectedPayMethod?.id === method.id;
                             return (
                               <button
-                                key={method.id}
+                                key={`method-${method.id || idx}-${idx}`}
                                 type="button"
                                 onClick={() => setSelectedPayMethod(method)}
                                 className={`w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-all cursor-pointer ${
@@ -2374,7 +2374,7 @@ export default function CandidateDashboard({
                     const stepLabel = workflowSteps[sub.step_index]?.label || `Étape ${sub.step_index + 1}`;
                     
                     return (
-                      <div key={sub.id || `sub-doc-${sIdx}`} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm space-y-3">
+                      <div key={`sub-doc-${sub.id || 'id'}-${sIdx}`} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm space-y-3">
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-3">
                             <div className={`p-2.5 rounded-lg ${isAudio ? "bg-indigo-50 text-indigo-700" : "bg-blue-50 text-blue-700"}`}>
@@ -2594,7 +2594,7 @@ export default function CandidateDashboard({
                   return userTestis.map((t, idx) => {
                     const don = allDonations.find(d => d.id === t.donation_id);
                     return (
-                      <div key={`user-testi-${t.id || idx}`} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4 flex flex-col justify-between">
+                      <div key={`user-testi-${t.id || 'id'}-${idx}`} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4 flex flex-col justify-between">
                         <div className="space-y-3">
                           <div className="flex justify-between items-start">
                             <div className="space-y-0.5">

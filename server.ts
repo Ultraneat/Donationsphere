@@ -2650,7 +2650,7 @@ app.post("/api/auth/login", async (req, res) => {
     res.json(userWithoutPassword);
   } else {
     console.warn(`[AUTH] Échec de connexion pour ${email}`);
-    res.status(401).json({ error: "Identifiants invalides (Vérifiez Supabase Auth)" });
+    res.status(401).json({ error: "Adresse e-mail ou mot de passe incorrect." });
   }
 });
 
