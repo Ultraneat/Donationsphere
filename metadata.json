@@ -1,0 +1,6 @@
+{
+  "name": "DonationSphere - Plateforme d'Attribution Solidaire",
+  "description": "Une plateforme d'attribution de dons universels de grande valeur avec vitrine interactive, suivi d'instruction en temps réel, messagerie d'accompagnement et outils d'administration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
