@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS donations (
     specifications JSONB DEFAULT '{}'::jsonb,
     agent_name VARCHAR(150) DEFAULT NULL,
     agent_phone VARCHAR(50) DEFAULT NULL,
+    donor_name VARCHAR(255) DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 
@@ -548,6 +549,11 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
 
   const showToast = (message: string, type: "success" | "error" = "success") => {
     setLocalToast({ message, type });
+    if (type === "success") {
+      toast.success(message);
+    } else {
+      toast.error(message);
+    }
     setTimeout(() => {
       setLocalToast(null);
     }, 3500);
@@ -746,12 +752,14 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const [editSpecifications, setEditSpecifications] = useState<Array<{ key: string; value: string }>>([]);
   const [isUploadingEditDonationImage, setIsUploadingEditDonationImage] = useState(false);
   const [editDonationImageStats, setEditDonationImageStats] = useState<any>(null);
+  const [editDonor, setEditDonor] = useState("");
 
   const [newTitle, setNewTitle] = useState("");
   const [newCategory, setNewCategory] = useState("Matériel");
   const [newDesc, setNewDesc] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [newLocation, setNewLocation] = useState("Paris, Île-de-France");
+  const [newDonor, setNewDonor] = useState("");
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
   const [replyInput, setReplyInput] = useState("");
   const [replyFile, setReplyFile] = useState<any>(null);
@@ -1869,6 +1877,7 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setEditImageUrl(donation.image_url || "");
     setEditAgentName(donation.agent_name || "");
     setEditAgentPhone(donation.agent_phone || "");
+    setEditDonor(donation.donor_name || "");
     
     const specsArray = donation.specifications 
       ? Object.entries(donation.specifications).map(([key, value]) => ({ key, value }))
@@ -1907,7 +1916,8 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
           location: editLocation.trim(),
           specifications: specsObj,
           agent_name: editAgentName.trim(),
-          agent_phone: editAgentPhone.trim()
+          agent_phone: editAgentPhone.trim(),
+          donor_name: editDonor.trim()
         })
       });
 
@@ -2003,7 +2013,8 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       image_url: finalImageUrl,
       location: newLocation.trim(),
       specifications: customSpecs,
-      agent_name: "Marc Dubreuil"
+      agent_name: "Marc Dubreuil",
+      donor_name: newDonor.trim() || "Anonyme"
     });
 
     if (createdDonation && createdDonation.id) {
@@ -2026,6 +2037,7 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       setNewDesc("");
       setNewAmount("");
       setNewLocation("Paris, Île-de-France");
+      setNewDonor("");
       setDonationImageUrl("");
       setDonationImageStats(null);
       setCustomSpecs({});
@@ -3933,6 +3945,17 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                       />
                     </div>
 
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-slate-700">Donateur (Nom complet ou Structure de l'annonceur) :</label>
+                      <input
+                        type="text"
+                        placeholder="Ex: Clara, Fondation Humanitaire, Anonyme..."
+                        value={newDonor}
+                        onChange={(e) => setNewDonor(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2 text-xs focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all"
+                      />
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-slate-700">Catégorie :</label>
@@ -4284,6 +4307,17 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                             <option value="Matériel">Don de Matériel (Nature)</option>
                             <option value="Financier">Don Numéraire (Financier)</option>
                           </select>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-700">Donateur :</label>
+                          <input
+                            type="text"
+                            value={editDonor}
+                            onChange={(e) => setEditDonor(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all text-slate-800"
+                            placeholder="Anonyme"
+                          />
                         </div>
 
                         <div className="space-y-1.5">

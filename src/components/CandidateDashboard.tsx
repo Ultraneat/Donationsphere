@@ -509,8 +509,11 @@ export default function CandidateDashboard({
   };
 
   useEffect(() => {
-    if (shouldAutoScroll && chatEndRef.current) {
-      chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (shouldAutoScroll) {
+      const container = document.getElementById("chat-sub-tab-messages");
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
     }
   }, [allUserMessages, messages, shouldAutoScroll]);
 

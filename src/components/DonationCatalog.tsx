@@ -113,6 +113,7 @@ export default function DonationCatalog({
   const [chatAttachment, setChatAttachment] = useState<any>(null);
   const [agentIsTyping, setAgentIsTyping] = useState<boolean>(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
 
   // Registration step inside postulation flow
   const [regName, setRegName] = useState("");
@@ -218,10 +219,21 @@ export default function DonationCatalog({
   const [urgencyReason, setUrgencyReason] = useState<string>("");
   const [bidSubmitted, setBidSubmitted] = useState<boolean>(false);
 
+  const handleChatScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.currentTarget;
+    const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 100;
+    setShouldAutoScroll(isAtBottom);
+  };
+
   // Auto-scroll chat modal
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [agentChats, unifiedMessages, agentIsTyping]);
+    if (shouldAutoScroll) {
+      const container = document.getElementById("live-chat-panel");
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+  }, [agentChats, unifiedMessages, agentIsTyping, shouldAutoScroll]);
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -647,6 +659,14 @@ export default function DonationCatalog({
                     </div>
 
                     <h3 className="text-base font-bold text-slate-900 line-clamp-1">{don.title}</h3>
+                    
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium">
+                      <span className="text-slate-400">Donateur :</span>
+                      <span className="text-indigo-600 bg-indigo-50/70 border border-indigo-100/50 px-1.5 py-0.5 rounded font-semibold text-[10px]">
+                        {don.donor_name || "Anonyme"}
+                      </span>
+                    </div>
+
                     <p className="text-slate-600 text-xs line-clamp-2 leading-relaxed">{don.description}</p>
                   </div>
 
@@ -970,6 +990,15 @@ export default function DonationCatalog({
                   <p className="text-slate-600 text-sm leading-relaxed whitespace-pre-line">{selectedDonationForDetails.description}</p>
                 </div>
 
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <span className="font-bold text-slate-700">Donateur initiateur :</span>
+                    <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded font-bold border border-indigo-100">
+                      {selectedDonationForDetails.donor_name || "Anonyme"}
+                    </span>
+                  </div>
+                </div>
+
                 {/* Spécifications Détaillées */}
                 {selectedDonationForDetails.specifications && (
                   <div className="space-y-3">
@@ -1211,7 +1240,7 @@ export default function DonationCatalog({
               </div>
 
               {/* Chat Messages Panel */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50" id="live-chat-panel">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50" id="live-chat-panel" onScroll={handleChatScroll}>
                 {(() => {
                   const filteredMessages = unifiedMessages.filter((m: any) => m.donation_id === selectedDonationForAgent.id);
                   const msgs = filteredMessages.length > 0 

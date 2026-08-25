@@ -538,7 +538,7 @@ app.get("/api/donations", async (req, res) => {
 });
 
 app.post("/api/donations", async (req, res) => {
-  const { title, category, description, target_amount, image_url, location, specifications, agent_name, agent_phone } = req.body;
+  const { title, category, description, target_amount, image_url, location, specifications, agent_name, agent_phone, donor_name } = req.body;
   const newDon = {
     id: crypto.randomUUID(),
     title,
@@ -552,6 +552,7 @@ app.post("/api/donations", async (req, res) => {
     specifications: specifications || { "Type": category || "Donation" },
     agent_name: agent_name || "Secrétariat Général",
     agent_phone: agent_phone || "+33 1 45 67 89 10",
+    donor_name: donor_name || "Anonyme",
     created_at: new Date().toISOString()
   };
 
@@ -563,7 +564,18 @@ app.post("/api/donations", async (req, res) => {
         saveLocalDb();
         return res.json(data[0]);
       }
-      if (error) console.error("Erreur insertion Supabase (donations):", error.message || error);
+      if (error) {
+        console.error("Erreur insertion Supabase (donations):", error.message || error);
+        if (error.message && error.message.includes("donor_name")) {
+          const { donor_name, ...fallbackDon } = newDon;
+          const retryResult = await supabase.from("donations").insert([fallbackDon]).select();
+          if (!retryResult.error && retryResult.data && retryResult.data[0]) {
+            localDb.donations.unshift({ ...retryResult.data[0], donor_name });
+            saveLocalDb();
+            return res.json({ ...retryResult.data[0], donor_name });
+          }
+        }
+      }
     } catch (e) {
       console.error("Exception insertion Supabase (donations):", e);
     }
@@ -576,7 +588,7 @@ app.post("/api/donations", async (req, res) => {
 
 app.put("/api/donations/:id", async (req, res) => {
   const { id } = req.params;
-  const { title, category, description, status, target_amount, image_url, location, specifications, agent_name, agent_phone } = req.body;
+  const { title, category, description, status, target_amount, image_url, location, specifications, agent_name, agent_phone, donor_name } = req.body;
 
   if (isSupabaseConnected) {
     try {
@@ -591,6 +603,7 @@ app.put("/api/donations/:id", async (req, res) => {
       if (specifications !== undefined) updateData.specifications = specifications;
       if (agent_name !== undefined) updateData.agent_name = agent_name;
       if (agent_phone !== undefined) updateData.agent_phone = agent_phone;
+      if (donor_name !== undefined) updateData.donor_name = donor_name;
 
       const { data, error } = await supabase
         .from("donations")
@@ -605,7 +618,25 @@ app.put("/api/donations/:id", async (req, res) => {
         }
         return res.json(data[0]);
       }
-      if (error) console.error("Erreur mise à jour Supabase (donations):", error.message);
+      if (error) {
+        console.error("Erreur mise à jour Supabase (donations):", error.message);
+        if (error.message && error.message.includes("donor_name")) {
+          const { donor_name: _, ...fallbackUpdate } = updateData;
+          const retryResult = await supabase
+            .from("donations")
+            .update(fallbackUpdate)
+            .eq("id", id)
+            .select();
+          if (!retryResult.error && retryResult.data && retryResult.data[0]) {
+            const idx = localDb.donations.findIndex(d => d.id === id);
+            if (idx !== -1) {
+              localDb.donations[idx] = { ...localDb.donations[idx], ...retryResult.data[0], donor_name };
+              saveLocalDb();
+            }
+            return res.json({ ...retryResult.data[0], donor_name });
+          }
+        }
+      }
     } catch (e) {
       console.error("Erreur mise à jour Supabase (donations):", e);
     }
@@ -628,6 +659,7 @@ app.put("/api/donations/:id", async (req, res) => {
     specifications: specifications !== undefined ? specifications : localDb.donations[index].specifications,
     agent_name: agent_name !== undefined ? agent_name : localDb.donations[index].agent_name,
     agent_phone: agent_phone !== undefined ? agent_phone : localDb.donations[index].agent_phone,
+    donor_name: donor_name !== undefined ? donor_name : localDb.donations[index].donor_name,
   };
 
   localDb.donations[index] = updated;

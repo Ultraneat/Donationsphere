@@ -11,6 +11,7 @@ export interface Donation {
   specifications?: Record<string, string>; // ex: { "Superficie": "120 m²", "Kilométrage": "85 000 km", "État": "Excellent" }
   agent_name?: string;
   agent_phone?: string;
+  donor_name?: string;
   created_at: string;
 }
 

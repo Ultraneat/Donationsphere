@@ -1357,7 +1357,7 @@ export default function App() {
 
           {activeTab === "about" && <AboutUs />}
 
-          {activeTab === "contact" && <ContactPage />}
+          {activeTab === "contact" && <ContactPage currentUser={currentUser} />}
           {activeTab === "privacy" && <PrivacyPolicy />}
           {activeTab === "terms" && <TermsOfUse />}
 
