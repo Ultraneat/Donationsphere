@@ -443,7 +443,7 @@ export default function DonationCatalog({
           
           {/* Catégories Dynamiques */}
           <div className="flex flex-nowrap md:flex-wrap gap-2 items-center overflow-x-auto pb-2 xl:pb-0 scrollbar-hide snap-x w-full">
-            {["Tous", "Immobilier", "Véhicules", "Financier", "Matériel"].map((cat) => {
+            {["Tous", "Immobilier", "Véhicules", "Financier", "Matériel", "Mixte"].map((cat) => {
               const IconComponent = getCategoryIcon(cat);
               const count = getCategoryCount(cat);
               const isActive = selectedCategory === cat;

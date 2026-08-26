@@ -2972,6 +2972,7 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                                 <option value="Matériel">Matériel (Biens, outils...)</option>
                                 <option value="Véhicules">Véhicules (Voitures, camions...)</option>
                                 <option value="Immobilier">Immobilier (Bâtiments, terrains...)</option>
+                                <option value="Mixte">Mixte (Financier & Nature)</option>
                                 <option value="Autre">Autre (Services, parrainage...)</option>
                               </select>
                             </div>
@@ -3966,6 +3967,9 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                         >
                           <option value="Matériel">Don de Matériel (Nature)</option>
                           <option value="Financier">Don Numéraire (Financier)</option>
+                          <option value="Immobilier">Don Immobilier</option>
+                          <option value="Véhicules">Don de Véhicule</option>
+                          <option value="Mixte">Don Mixte (Financier & Nature)</option>
                         </select>
                       </div>
 
@@ -4306,6 +4310,9 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                           >
                             <option value="Matériel">Don de Matériel (Nature)</option>
                             <option value="Financier">Don Numéraire (Financier)</option>
+                            <option value="Immobilier">Don Immobilier</option>
+                            <option value="Véhicules">Don de Véhicule</option>
+                            <option value="Mixte">Don Mixte (Financier & Nature)</option>
                           </select>
                         </div>
 
