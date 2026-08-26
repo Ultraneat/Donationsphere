@@ -12,6 +12,7 @@ export interface Donation {
   agent_name?: string;
   agent_phone?: string;
   donor_name?: string;
+  views_count?: number;
   created_at: string;
 }
 

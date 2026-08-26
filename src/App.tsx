@@ -708,6 +708,21 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeApplicationId, currentUser, isAdmin, isResponsable]);
 
+  // ACTION : Enregistrer une vue/consultation pour un don
+  const handleViewDonation = async (id: string) => {
+    try {
+      const response = await fetch(`/api/donations/${id}/view`, { method: "POST" });
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success) {
+          setDonations(prev => prev.map(d => d.id === id ? { ...d, views_count: result.views_count } : d));
+        }
+      }
+    } catch (e) {
+      console.error("Erreur incrementation des vues:", e);
+    }
+  };
+
   // ACTION : Créer une candidature (Fast-Track)
   const handleApply = async (donation: Donation, candidateName: string) => {
     try {
@@ -1341,6 +1356,7 @@ export default function App() {
               partners={partners}
               applications={applications}
               platformHeroImage={platformHeroImage}
+              onViewDonation={handleViewDonation}
             />
           )}
 

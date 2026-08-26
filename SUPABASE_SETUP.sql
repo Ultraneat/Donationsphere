@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS public.donations (
     agent_name TEXT,
     agent_phone TEXT,
     donor_name TEXT,
+    views_count INT DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
 

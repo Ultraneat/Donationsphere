@@ -102,6 +102,11 @@ if (fs.existsSync(LOCAL_DB_FILE)) {
 
 localDb.settings = localDb.settings || {};
 localDb.chatbot_training = localDb.chatbot_training || [];
+localDb.donations = localDb.donations || [];
+localDb.donations = localDb.donations.map((d: any) => ({
+  ...d,
+  views_count: typeof d.views_count === 'number' ? d.views_count : Math.floor(Math.random() * 80) + 15
+}));
 
 if (localDb.chatbot_training.length === 0) {
   localDb.chatbot_training = [
@@ -425,6 +430,7 @@ app.post("/api/db-reset", (req, res) => {
         status: "active",
         target_amount: null,
         current_bids_count: 3,
+        views_count: 147,
         image_url: "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&q=80&w=600",
         location: "Bordeaux, France",
         specifications: {
@@ -445,6 +451,7 @@ app.post("/api/db-reset", (req, res) => {
         status: "active",
         target_amount: null,
         current_bids_count: 5,
+        views_count: 284,
         image_url: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=600",
         location: "Lyon, France",
         specifications: {
@@ -465,6 +472,7 @@ app.post("/api/db-reset", (req, res) => {
         status: "active",
         target_amount: 5000,
         current_bids_count: 2,
+        views_count: 98,
         image_url: "https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?auto=format&fit=crop&q=80&w=600",
         location: "National, France",
         specifications: {
@@ -547,6 +555,7 @@ app.post("/api/donations", async (req, res) => {
     status: "active",
     target_amount: target_amount ? Number(target_amount) : 0,
     current_bids_count: 0,
+    views_count: 0,
     image_url: image_url || "https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&q=80&w=600",
     location: location || "France (National)",
     specifications: specifications || { "Type": category || "Donation" },
@@ -584,6 +593,57 @@ app.post("/api/donations", async (req, res) => {
   localDb.donations.unshift(newDon);
   saveLocalDb();
   res.json(newDon);
+});
+
+app.post("/api/donations/:id/view", async (req, res) => {
+  const { id } = req.params;
+
+  // 1. Mettre à jour en local
+  const localIdx = localDb.donations.findIndex(d => d.id === id);
+  if (localIdx !== -1) {
+    localDb.donations[localIdx].views_count = (localDb.donations[localIdx].views_count || 0) + 1;
+    saveLocalDb();
+  }
+
+  // 2. Mettre à jour dans Supabase si connecté et si la colonne existe
+  if (isSupabaseConnected) {
+    try {
+      const { data: don, error: selectErr } = await supabase
+        .from("donations")
+        .select("views_count")
+        .eq("id", id)
+        .single();
+        
+      if (!selectErr && don) {
+        const nextViews = (don.views_count || 0) + 1;
+        const { data, error: updateErr } = await supabase
+          .from("donations")
+          .update({ views_count: nextViews })
+          .eq("id", id)
+          .select();
+          
+        if (!updateErr && data && data[0]) {
+          if (localIdx !== -1) {
+            localDb.donations[localIdx] = { ...localDb.donations[localIdx], ...data[0] };
+            saveLocalDb();
+          }
+          return res.json({ success: true, views_count: nextViews, donation: data[0] });
+        }
+      } else {
+        // Fallback si la colonne n'existe pas encore ou erreur
+        const nextViews = (localIdx !== -1 ? localDb.donations[localIdx].views_count : 0) || 1;
+        await supabase
+          .from("donations")
+          .update({ views_count: nextViews })
+          .eq("id", id);
+      }
+    } catch (e) {
+      console.warn("[SUPABASE] Colonne views_count potentiellement absente ou erreur:", e);
+    }
+  }
+
+  const updatedDon = localIdx !== -1 ? localDb.donations[localIdx] : null;
+  res.json({ success: true, views_count: updatedDon ? (updatedDon.views_count || 0) : 0, donation: updatedDon });
 });
 
 app.put("/api/donations/:id", async (req, res) => {
