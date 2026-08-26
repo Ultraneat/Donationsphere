@@ -537,7 +537,17 @@ app.get("/api/donations", async (req, res) => {
     try {
       const { data, error } = await supabase.from("donations").select("*").order("created_at", { ascending: false });
       if (!error && data) {
-        return res.json(data);
+        // En cas d'absence de la colonne views_count dans Supabase, fusionner avec les données locales persistantes
+        const merged = data.map((don: any) => {
+          const localDon = localDb.donations.find(d => d.id === don.id);
+          return {
+            ...don,
+            views_count: (don.views_count !== undefined && don.views_count !== null)
+              ? don.views_count
+              : (localDon?.views_count || 0)
+          };
+        });
+        return res.json(merged);
       }
       if (error) console.error("Erreur récupération Supabase (donations):", error);
     } catch (e) {}
@@ -599,12 +609,19 @@ app.post("/api/donations/:id/view", async (req, res) => {
   const { id } = req.params;
   const io = req.app.get("io");
 
-  // 1. Mettre à jour en local
-  const localIdx = localDb.donations.findIndex(d => d.id === id);
+  // 1. Mettre à jour en local (et créer l'entrée si le don provient uniquement de Supabase)
+  let localIdx = localDb.donations.findIndex(d => d.id === id);
   if (localIdx !== -1) {
     localDb.donations[localIdx].views_count = (localDb.donations[localIdx].views_count || 0) + 1;
-    saveLocalDb();
+  } else {
+    // Si le don n'existait que sur Supabase, on crée un enregistrement local pour persister ses vues
+    localDb.donations.push({
+      id,
+      views_count: 1
+    } as any);
+    localIdx = localDb.donations.length - 1;
   }
+  saveLocalDb();
 
   // 2. Mettre à jour dans Supabase si connecté et si la colonne existe
   if (isSupabaseConnected) {
@@ -624,19 +641,17 @@ app.post("/api/donations/:id/view", async (req, res) => {
           .select();
           
         if (!updateErr && data && data[0]) {
-          if (localIdx !== -1) {
-            localDb.donations[localIdx] = { ...localDb.donations[localIdx], ...data[0] };
-            saveLocalDb();
-          }
-          const updatedDon = localDb.donations[localIdx] || data[0];
+          localDb.donations[localIdx] = { ...localDb.donations[localIdx], ...data[0] };
+          saveLocalDb();
+          const updatedDon = localDb.donations[localIdx];
           if (io) {
             io.emit("donation:updated", updatedDon);
           }
           return res.json({ success: true, views_count: nextViews, donation: updatedDon });
         }
       } else {
-        // Fallback si la colonne n'existe pas encore ou erreur
-        const nextViews = (localIdx !== -1 ? localDb.donations[localIdx].views_count : 0) || 1;
+        // Fallback si la colonne n'existe pas encore
+        const nextViews = localDb.donations[localIdx].views_count;
         await supabase
           .from("donations")
           .update({ views_count: nextViews })
