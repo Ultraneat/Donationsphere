@@ -136,6 +136,17 @@ const clearGoogtransCookie = () => {
 };
 
 export default function App() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const [currentLang, setCurrentLang] = useState<string>(() => {
     try {
       return localStorage.getItem("user_lang") || "fr";
@@ -1263,7 +1274,7 @@ export default function App() {
                 >
                   {LANGUAGES.map((lang) => (
                     <option key={lang.code} value={lang.code} className="text-slate-800 bg-white">
-                      {lang.flag} {lang.label}
+                      {lang.flag} {isMobile ? lang.code.toUpperCase() : lang.label}
                     </option>
                   ))}
                 </select>
