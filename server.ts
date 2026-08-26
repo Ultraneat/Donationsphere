@@ -597,6 +597,7 @@ app.post("/api/donations", async (req, res) => {
 
 app.post("/api/donations/:id/view", async (req, res) => {
   const { id } = req.params;
+  const io = req.app.get("io");
 
   // 1. Mettre à jour en local
   const localIdx = localDb.donations.findIndex(d => d.id === id);
@@ -627,7 +628,11 @@ app.post("/api/donations/:id/view", async (req, res) => {
             localDb.donations[localIdx] = { ...localDb.donations[localIdx], ...data[0] };
             saveLocalDb();
           }
-          return res.json({ success: true, views_count: nextViews, donation: data[0] });
+          const updatedDon = localDb.donations[localIdx] || data[0];
+          if (io) {
+            io.emit("donation:updated", updatedDon);
+          }
+          return res.json({ success: true, views_count: nextViews, donation: updatedDon });
         }
       } else {
         // Fallback si la colonne n'existe pas encore ou erreur
@@ -643,6 +648,9 @@ app.post("/api/donations/:id/view", async (req, res) => {
   }
 
   const updatedDon = localIdx !== -1 ? localDb.donations[localIdx] : null;
+  if (io && updatedDon) {
+    io.emit("donation:updated", updatedDon);
+  }
   res.json({ success: true, views_count: updatedDon ? (updatedDon.views_count || 0) : 0, donation: updatedDon });
 });
 
