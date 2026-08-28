@@ -1404,30 +1404,16 @@ export default function DonationCatalog({
                 </div>
                 
                 <div className="flex items-center gap-2 ml-auto">
-                  {/* Bouton Appeler Agent Direct */}
+                  {/* Bouton Appeler (WhatsApp) */}
                   <button
                     onClick={() => {
-                      const don = selectedDonationForAgent;
-                      setSelectedDonationForAgent(null);
-                      handleStartCall(don);
+                      handleStartCall(selectedDonationForAgent);
                     }}
-                    className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-sm"
-                    title="Lancer un appel direct avec l'agent"
+                    className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-sm"
+                    title="Lancer l'appel WhatsApp avec l'agent"
                   >
                     <PhoneCall className="h-3 w-3" />
                     Appeler
-                  </button>
-
-                  {/* Bouton WhatsApp Gateway */}
-                  <button
-                    onClick={() => {
-                      const text = `Bonjour ! Je souhaite en savoir plus sur votre don : "${selectedDonationForAgent.title}" (Réf: #${selectedDonationForAgent.id}). Pouvez-vous m'accompagner ?`;
-                      window.open(`https://wa.me/33600000000?text=${encodeURIComponent(text)}`, "_blank");
-                    }}
-                    className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-sm border border-slate-700"
-                    title="Contacter via WhatsApp"
-                  >
-                    WhatsApp
                   </button>
                   
                   <button 
@@ -1439,51 +1425,52 @@ export default function DonationCatalog({
                 </div>
               </div>
 
-              {/* Chat Messages Panel */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50" id="live-chat-panel" onScroll={handleChatScroll}>
-                {/* Sondage de satisfaction post-appel WhatsApp */}
-                {satisfactionPromptDonation?.id === selectedDonationForAgent.id && (
-                  <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-4 rounded-xl shadow-lg border border-indigo-700 space-y-3 animate-fadeIn my-1">
-                    <div className="flex items-start gap-3">
-                      <div className="h-8 w-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
-                        <CheckCircle className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-white">Suivi de votre appel WhatsApp</h4>
-                        <p className="text-[11px] text-indigo-200 mt-0.5 leading-relaxed">
-                          Avez-vous été satisfait de votre appel ? Avez-vous bien été pris en charge par notre agent ?
-                        </p>
-                      </div>
+              {/* Banner Sondage de satisfaction post-appel WhatsApp (visible directement sous l'entête) */}
+              {satisfactionPromptDonation?.id === selectedDonationForAgent.id && (
+                <div className="p-3.5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border-b border-indigo-500/30 shadow-md space-y-2.5 shrink-0 animate-fadeIn z-20">
+                  <div className="flex items-start gap-2.5">
+                    <div className="h-7 w-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                      <CheckCircle className="h-4 w-4" />
                     </div>
-                    
-                    <div className="flex flex-col gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          localStorage.removeItem("pending_whatsapp_call_donation");
-                          setSatisfactionPromptDonation(null);
-                          setSelectedDonationForAgent(null);
-                        }}
-                        className="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-extrabold transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 shadow"
-                      >
-                        <CheckCircle className="h-4 w-4" />
-                        Oui, merci
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          localStorage.removeItem("pending_whatsapp_call_donation");
-                          setSatisfactionPromptDonation(null);
-                        }}
-                        className="w-full px-3 py-2 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-lg text-xs font-bold transition-all border border-indigo-400/40 cursor-pointer text-center flex items-center justify-center gap-1.5"
-                      >
-                        <MessageSquare className="h-4 w-4 text-indigo-200" />
-                        Non, je veux continuer la discussion ici
-                      </button>
+                    <div>
+                      <h4 className="text-xs font-extrabold text-white">Suivi de votre appel WhatsApp</h4>
+                      <p className="text-[11px] text-indigo-200 mt-0.5 leading-snug">
+                        Avez-vous été satisfait de votre appel ? Avez-vous bien été pris en charge par notre agent ?
+                      </p>
                     </div>
                   </div>
-                )}
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.removeItem("pending_whatsapp_call_donation");
+                        setSatisfactionPromptDonation(null);
+                        setSelectedDonationForAgent(null);
+                      }}
+                      className="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-extrabold transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 shadow"
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                      Oui, merci
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.removeItem("pending_whatsapp_call_donation");
+                        setSatisfactionPromptDonation(null);
+                      }}
+                      className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all border border-indigo-400/40 cursor-pointer text-center flex items-center justify-center gap-1.5"
+                    >
+                      <MessageSquare className="h-4 w-4 text-indigo-200" />
+                      Non, je veux continuer la discussion ici
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Chat Messages Panel */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50" id="live-chat-panel" onScroll={handleChatScroll}>
                 {(() => {
                   const filteredMessages = unifiedMessages.filter((m: any) => m.donation_id === selectedDonationForAgent.id);
                   const msgs = filteredMessages.length > 0 
