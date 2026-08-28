@@ -25,6 +25,27 @@ const ai = new GoogleGenAI({
   }
 });
 
+// Helper avec basculement automatique de modèle (Gemini 2.5 Flash -> 2.5 Pro -> 1.5 Flash -> 3.7 Flash) en cas d'erreur 503 / charge élevée
+async function callGeminiWithFallback(params: { contents: any; config?: any }) {
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-3.7-flash"];
+  let lastError: any = null;
+
+  for (const model of modelsToTry) {
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: params.contents,
+        config: params.config,
+      });
+      return response;
+    } catch (err: any) {
+      console.warn(`[AI] Modèle ${model} indisponible (${err?.status || err?.message || err}). Tentative avec le modèle suivant...`);
+      lastError = err;
+    }
+  }
+  throw lastError;
+}
+
 const app = express();
 const PORT = 3000;
 const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -2668,8 +2689,7 @@ Directives conversationnelles :
     });
 
     console.log(`[AI] Appel Gemini pour le message: "${message.substring(0, 60)}..."`);
-    const response = await ai.models.generateContent({
-      model: "gemini-3.7-flash",
+    const response = await callGeminiWithFallback({
       contents: contents,
       config: {
         systemInstruction,
@@ -2681,7 +2701,7 @@ Directives conversationnelles :
     res.json({ response: aiResponseText, source: "ai" });
   } catch (error: any) {
     console.error("[AI] Erreur Gemini Chat:", error);
-    // Fallback ultime en cas de quota dépassé
+    // Fallback ultime en cas de quota dépassé ou erreur réseau
     res.json({ 
       response: "Je suis votre Conseiller Solidaire. Pour postuler à un don ou connaître les critères d'éligibilité, vous pouvez consulter la fiche de chaque don dans notre catalogue ou remplir un formulaire de candidature. Toutes nos attributions sont 100% gratuites.",
       source: "fallback"
@@ -2698,8 +2718,7 @@ app.post("/api/ai/copilot", async (req, res) => {
 Propose une réponse administrative personnalisée, professionnelle, claire et courtoise à envoyer au candidat suite à son message.
 S'adapter au ton de la conversation. Tu peux proposer 3 options de réponses rapides (Acceptation de dossier, Demande de document complémentaire, ou Rejet motivé).`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
+      const response = await callGeminiWithFallback({
         contents: `Voici le dernier message du candidat : "${message}"
         Propose une réponse d'aide à la rédaction administrative. Renvoie uniquement le texte rédigé sous forme de suggestion prête à copier.`,
         config: { systemInstruction }
@@ -2711,8 +2730,7 @@ S'adapter au ton de la conversation. Tu peux proposer 3 options de réponses rap
     if (action === "summarize") {
       const systemInstruction = `Résume en 3 points clés le profil d'un postulant, son besoin, et ses motivations à partir des informations fournies pour faire gagner du temps aux modérateurs de la fondation.`;
       
-      const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
+      const response = await callGeminiWithFallback({
         contents: `Profil et informations de candidature : ${JSON.stringify(profile || {})}`,
         config: { systemInstruction }
       });
@@ -2740,8 +2758,7 @@ Analyse la pièce justificative fournie (pièce d'identité, devis, attestation 
 Détecte d'éventuelles incohérences flagrantes, fraudes évidentes, flous suspects, retouches graphiques visibles ou expirations de validité.
 Renvoie un rapport d'audit concis en 3 points (Statut: Conforme / Suspect, Raisons de l'avis, Recommandation de modération).`;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
+      const response = await callGeminiWithFallback({
         contents: {
           parts: [
             imagePart,
