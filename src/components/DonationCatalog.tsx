@@ -204,18 +204,40 @@ export default function DonationCatalog({
     }
   };
 
-  // État et gestion des Appels Vocaux Directs avec l'Agent
-  const [activeCallDonation, setActiveCallDonation] = useState<Donation | null>(null);
-  const [callDuration, setCallDuration] = useState<number>(0);
-  const [callState, setCallState] = useState<"calling" | "connected" | "ended">("calling");
-  const callTimerRef = useRef<any>(null);
+  // État et gestion des Appels WhatsApp avec l'Agent & Sondage de Satisfaction post-appel
+  const [satisfactionPromptDonation, setSatisfactionPromptDonation] = useState<Donation | null>(null);
+
+  useEffect(() => {
+    const handleReturnToSite = () => {
+      const savedDonationStr = localStorage.getItem("pending_whatsapp_call_donation");
+      if (savedDonationStr) {
+        try {
+          const don = JSON.parse(savedDonationStr);
+          if (don) {
+            setSelectedDonationForAgent(don);
+            setSatisfactionPromptDonation(don);
+          }
+        } catch (e) {
+          console.error("Erreur parsing pending call:", e);
+        }
+      }
+    };
+
+    window.addEventListener("focus", handleReturnToSite);
+    document.addEventListener("visibilitychange", handleReturnToSite);
+    return () => {
+      window.removeEventListener("focus", handleReturnToSite);
+      document.removeEventListener("visibilitychange", handleReturnToSite);
+    };
+  }, []);
 
   const handleStartCall = (donation: Donation) => {
-    setActiveCallDonation(donation);
-    setCallState("calling");
-    setCallDuration(0);
+    // 1. Déclencher l'ouverture automatique du chat avec questionnaire de satisfaction à la fin/retour
+    localStorage.setItem("pending_whatsapp_call_donation", JSON.stringify(donation));
+    setSatisfactionPromptDonation(donation);
+    setSelectedDonationForAgent(donation);
 
-    // Enregistrer l'appel dans le journal d'administration (Backend)
+    // 2. Enregistrer l'appel WhatsApp dans le journal d'administration (Backend)
     fetch("/api/calls", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -224,31 +246,15 @@ export default function DonationCatalog({
         donation_title: donation.title,
         user_name: currentUser ? (currentUser.name || currentUser.email) : "Anonyme",
         user_email: currentUser ? currentUser.email : null,
-        type: "Appel Direct Agent",
-        duration: "01:25",
+        type: "Appel WhatsApp Agent",
+        duration: "WhatsApp",
         status: "Terminé"
       })
     }).catch(err => console.error("Erreur log appel:", err));
 
-    // Simulation de décrochage après 2 secondes
-    setTimeout(() => {
-      setCallState("connected");
-      callTimerRef.current = setInterval(() => {
-        setCallDuration(prev => prev + 1);
-      }, 1000);
-    }, 1800);
-  };
-
-  const handleEndCall = (openChatAfter = false) => {
-    if (callTimerRef.current) clearInterval(callTimerRef.current);
-    setCallState("ended");
-    const targetDonation = activeCallDonation;
-    setTimeout(() => {
-      setActiveCallDonation(null);
-      if (openChatAfter && targetDonation) {
-        setSelectedDonationForAgent(targetDonation);
-      }
-    }, 400);
+    // 3. Lancer l'appel via WhatsApp
+    const text = `Bonjour ! Je vous contacte par appel concernant la dotation : "${donation.title}" (Réf: #${donation.id}). Pouvez-vous m'accompagner ?`;
+    window.open(`https://wa.me/33600000000?text=${encodeURIComponent(text)}`, "_blank");
   };
 
   const [unifiedMessages, setUnifiedMessages] = useState<any[]>([]);
@@ -1435,6 +1441,49 @@ export default function DonationCatalog({
 
               {/* Chat Messages Panel */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50" id="live-chat-panel" onScroll={handleChatScroll}>
+                {/* Sondage de satisfaction post-appel WhatsApp */}
+                {satisfactionPromptDonation?.id === selectedDonationForAgent.id && (
+                  <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-4 rounded-xl shadow-lg border border-indigo-700 space-y-3 animate-fadeIn my-1">
+                    <div className="flex items-start gap-3">
+                      <div className="h-8 w-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/30">
+                        <CheckCircle className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-white">Suivi de votre appel WhatsApp</h4>
+                        <p className="text-[11px] text-indigo-200 mt-0.5 leading-relaxed">
+                          Avez-vous été satisfait de votre appel ? Avez-vous bien été pris en charge par notre agent ?
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-col gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.removeItem("pending_whatsapp_call_donation");
+                          setSatisfactionPromptDonation(null);
+                          setSelectedDonationForAgent(null);
+                        }}
+                        className="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-extrabold transition-all cursor-pointer text-center flex items-center justify-center gap-1.5 shadow"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                        Oui, merci
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.removeItem("pending_whatsapp_call_donation");
+                          setSatisfactionPromptDonation(null);
+                        }}
+                        className="w-full px-3 py-2 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-lg text-xs font-bold transition-all border border-indigo-400/40 cursor-pointer text-center flex items-center justify-center gap-1.5"
+                      >
+                        <MessageSquare className="h-4 w-4 text-indigo-200" />
+                        Non, je veux continuer la discussion ici
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {(() => {
                   const filteredMessages = unifiedMessages.filter((m: any) => m.donation_id === selectedDonationForAgent.id);
                   const msgs = filteredMessages.length > 0 
@@ -2074,112 +2123,6 @@ export default function DonationCatalog({
                   <div className="h-1 bg-slate-700 rounded-full overflow-hidden">
                     <div className="h-full bg-indigo-500 w-[40%]" />
                   </div>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* POPUP SIMULATION D'APPEL VOCAL DIRECT AVEC L'AGENT */}
-      <AnimatePresence>
-        {activeCallDonation && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
-            />
-
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 max-w-sm w-full text-center text-white shadow-2xl z-10 overflow-hidden"
-            >
-              {/* Halos lumineux en fond */}
-              <div className="absolute -top-12 -left-12 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl" />
-              <div className="absolute -bottom-12 -right-12 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl" />
-
-              <div className="relative z-10 flex flex-col items-center space-y-6">
-                {/* Header Agent */}
-                <div className="space-y-2">
-                  <div className="relative mx-auto w-24 h-24 rounded-full overflow-hidden border-4 border-emerald-500/30 shadow-xl flex items-center justify-center bg-slate-800">
-                    <img
-                      src={activeCallDonation.agent_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200"}
-                      alt={activeCallDonation.agent_name || "Agent Solidaire"}
-                      className="w-full h-full object-cover"
-                    />
-                    <span className="absolute bottom-1 right-1 h-4 w-4 bg-emerald-500 rounded-full border-2 border-slate-900 animate-pulse" />
-                  </div>
-                  <h4 className="text-lg font-black text-white flex items-center justify-center gap-1.5">
-                    {activeCallDonation.agent_name || "Agent d'Attribution"}
-                  </h4>
-                  <p className="text-xs font-semibold text-emerald-400">
-                    {activeCallDonation.agent_phone || "+33 1 89 20 44 10"}
-                  </p>
-                  <p className="text-[10px] text-slate-400 max-w-[220px] mx-auto truncate">
-                    Rattaché à : {activeCallDonation.title}
-                  </p>
-                </div>
-
-                {/* État de la connexion & chrono */}
-                <div className="space-y-2">
-                  {callState === "calling" ? (
-                    <div className="flex items-center justify-center gap-2 text-amber-400 text-xs font-bold animate-pulse">
-                      <PhoneCall className="h-4 w-4 animate-bounce" />
-                      Appel en cours de connexion...
-                    </div>
-                  ) : callState === "connected" ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-center gap-2 text-emerald-400 text-xs font-mono font-bold">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
-                        {Math.floor(callDuration / 60).toString().padStart(2, '0')}:{(callDuration % 60).toString().padStart(2, '0')}
-                      </div>
-                      
-                      {/* Onde sonore animée */}
-                      <div className="flex items-center justify-center gap-1 h-6">
-                        <span className="w-1 bg-emerald-500 rounded-full h-3 animate-[pulse_0.6s_infinite]" />
-                        <span className="w-1 bg-emerald-400 rounded-full h-6 animate-[pulse_0.4s_infinite]" />
-                        <span className="w-1 bg-emerald-500 rounded-full h-4 animate-[pulse_0.7s_infinite]" />
-                        <span className="w-1 bg-emerald-300 rounded-full h-5 animate-[pulse_0.5s_infinite]" />
-                        <span className="w-1 bg-emerald-500 rounded-full h-2 animate-[pulse_0.8s_infinite]" />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-slate-400 text-xs font-bold">Appel terminé</div>
-                  )}
-                </div>
-
-                {/* Identification de l'utilisateur qui appelle */}
-                <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/60 w-full text-left flex items-center justify-between">
-                  <div className="text-[10px]">
-                    <span className="text-slate-400 block">Appel émis par :</span>
-                    <span className="font-extrabold text-white">{currentUser ? (currentUser.name || currentUser.email) : "Anonyme (Non connecté)"}</span>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold ${currentUser ? "bg-emerald-950 text-emerald-400 border border-emerald-800" : "bg-slate-700 text-slate-300"}`}>
-                    {currentUser ? "Authentifié" : "Anonyme"}
-                  </span>
-                </div>
-
-                {/* Boutons d'action */}
-                <div className="flex flex-col gap-2 w-full pt-2">
-                  <button
-                    onClick={() => handleEndCall(true)}
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    Poursuivre sur le Chat Direct
-                  </button>
-
-                  <button
-                    onClick={() => handleEndCall(false)}
-                    className="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-3 px-4 rounded-xl text-xs transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <PhoneOff className="h-4 w-4" />
-                    Raccrocher l'Appel
-                  </button>
                 </div>
               </div>
             </motion.div>
