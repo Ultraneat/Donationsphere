@@ -64,7 +64,14 @@ import {
   Save,
   Upload,
   CreditCard,
-  Coins
+  Coins,
+  ChevronRight,
+  PhoneCall,
+  PhoneOff,
+  Calendar,
+  Clock,
+  RotateCw,
+  User
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "react-hot-toast";
@@ -411,7 +418,7 @@ export default function AdminDashboard({
   useEffect(() => {
     // Si l'onglet actif n'est pas autorisé, rediriger vers le premier autorisé
     const availableTabs = [
-      "overview", "workflow", "applications", "publish", "fields", "visitor_chats",
+      "overview", "workflow", "applications", "publish", "fields", "visitor_chats", "call_logs",
       ...(isAdmin ? ["chatbot_training"] : []),
       "testimonials", "partners", "security", "users", "docs", "payments"
     ];
@@ -427,6 +434,32 @@ export default function AdminDashboard({
   const [newPartner, setNewPartner] = useState({ name: "", logo_url: "", website: "" });
   const [copied, setCopied] = useState(false);
   const [localToast, setLocalToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  // Journal des Appels States
+  const [callLogs, setCallLogs] = useState<any[]>([]);
+  const [isLoadingCalls, setIsLoadingCalls] = useState(false);
+  const [callSearchTerm, setCallSearchTerm] = useState("");
+
+  const fetchCallLogs = async () => {
+    setIsLoadingCalls(true);
+    try {
+      const res = await fetch("/api/calls");
+      if (res.ok) {
+        const data = await res.json();
+        setCallLogs(data.calls || []);
+      }
+    } catch (err) {
+      console.error("Erreur chargement des appels:", err);
+    } finally {
+      setIsLoadingCalls(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCallLogs();
+    const interval = setInterval(fetchCallLogs, 8000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Chatbot Training States
   const [chatbotTraining, setChatbotTraining] = useState<any[]>([]);
@@ -732,6 +765,7 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     { id: "publish", label: "Publication" },
     { id: "fields", label: "Champs" },
     { id: "visitor_chats", label: "Chats Live" },
+    { id: "call_logs", label: "Journal des Appels" },
     { id: "testimonials", label: "Avis" },
     { id: "security", label: "Sécurité" }
   ];
@@ -855,6 +889,110 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   const totalAppUnread = Object.values(appUnreadCounts || {}).reduce((acc: number, val: any) => acc + (val || 0), 0) as number;
 
   const [activeVisitorUserId, setActiveVisitorUserId] = useState<string | null>(null);
+
+  // GESTION DES FILTRES, METADONNÉES ET COPILOTE IA POUR LES FILS DE DISCUSSION
+  const [threadMetadata, setThreadMetadata] = useState<Record<string, { assigned_to?: string; is_priority?: boolean; is_closed?: boolean }>>({});
+  const [activeFilter, setActiveFilter] = useState<"all" | "priority" | "unassigned" | "mine" | "closed">("all");
+  const [copilotSuggestion, setCopilotSuggestion] = useState("");
+  const [copilotSummary, setCopilotSummary] = useState("");
+  const [copilotAudit, setCopilotAudit] = useState("");
+  const [isCopilotLoading, setIsCopilotLoading] = useState(false);
+
+  const fetchThreadMetadata = async () => {
+    try {
+      const res = await fetch("/api/chat-threads/metadata");
+      if (res.ok) {
+        const data = await res.json();
+        setThreadMetadata(data);
+      }
+    } catch (e) {
+      console.error("Error fetching metadata:", e);
+    }
+  };
+
+  const updateThreadMetadata = async (userKey: string, fields: { assigned_to?: string; is_priority?: boolean; is_closed?: boolean }) => {
+    try {
+      const res = await fetch(`/api/chat-threads/metadata/${encodeURIComponent(userKey)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setThreadMetadata(prev => ({
+          ...prev,
+          [userKey]: data
+        }));
+      }
+    } catch (e) {
+      console.error("Error updating thread metadata:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchThreadMetadata();
+  }, []);
+
+  const handleDraftReply = async (message: string) => {
+    setIsCopilotLoading(true);
+    setCopilotSuggestion("");
+    try {
+      const res = await fetch("/api/ai/copilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "draft-reply", message })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCopilotSuggestion(data.suggestion);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsCopilotLoading(false);
+    }
+  };
+
+  const handleSummarizeProfile = async (profile: any) => {
+    setIsCopilotLoading(true);
+    setCopilotSummary("");
+    try {
+      const res = await fetch("/api/ai/copilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "summarize", profile })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCopilotSummary(data.summary);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsCopilotLoading(false);
+    }
+  };
+
+  const handleAuditDocument = async (base64: string, name: string) => {
+    setIsCopilotLoading(true);
+    setCopilotAudit("");
+    try {
+      const res = await fetch("/api/ai/copilot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "audit-document", document_base64: base64, document_name: name })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCopilotAudit(data.audit);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsCopilotLoading(false);
+    }
+  };
+
   const [activeVisitorUnifiedMessages, setActiveVisitorUnifiedMessages] = useState<any[]>([]);
   const [activeAppUnifiedMessages, setActiveAppUnifiedMessages] = useState<any[]>([]);
 
@@ -2394,6 +2532,25 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                     </span>
                   )}
                 </div>
+              </button>
+            )}
+
+            {hasPermission("call_logs") && (
+              <button
+                onClick={() => setActiveTab("call_logs")}
+                className={`w-auto md:w-full flex-shrink-0 snap-start flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === "call_logs"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/10"
+                    : "hover:bg-slate-900 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <PhoneCall className="h-4 w-4 text-emerald-400" />
+                  Journal des Appels
+                </div>
+                <span className="bg-slate-800 text-slate-300 text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                  {callLogs.length}
+                </span>
               </button>
             )}
 
@@ -4732,17 +4889,43 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
               exit={{ opacity: 0, y: -10 }}
               className="space-y-6"
             >
-              <div className="space-y-1">
-                <h3 className="text-lg font-black text-slate-900">Messagerie Directe - Visiteurs en Ligne</h3>
-                <p className="text-slate-500 text-xs">Répondez instantanément aux questions des visiteurs intéressés par vos dons avant leur soumission de dossier officielle.</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5 text-indigo-600 animate-pulse" />
+                    Boîte de Réception Centrale & Accompagnement
+                  </h3>
+                  <p className="text-slate-500 text-xs">Gérez, priorisez et assignez les discussions des postulants, assistés par notre Copilote IA de modération.</p>
+                </div>
+                
+                {/* Barre de Filtres de discussion */}
+                <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/50">
+                  {(["all", "priority", "mine", "unassigned", "closed"] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => setActiveFilter(filter)}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-tight transition-all cursor-pointer ${
+                        activeFilter === filter
+                          ? "bg-white text-slate-950 shadow-sm"
+                          : "text-slate-500 hover:text-slate-900"
+                      }`}
+                    >
+                      {filter === "all" && "Tout"}
+                      {filter === "priority" && "⚠️ Prioritaires"}
+                      {filter === "mine" && "👤 Assignés à moi"}
+                      {filter === "unassigned" && "🔍 Non assignés"}
+                      {filter === "closed" && "🔒 Clos"}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[480px]">
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-xl overflow-hidden grid grid-cols-1 lg:grid-cols-12 min-h-[580px]">
                 {/* Liste des conversations (Groupées par utilisateur) */}
-                <div className="md:col-span-4 border-r border-slate-100 p-4 space-y-4">
+                <div className="lg:col-span-4 border-r border-slate-100 p-4 flex flex-col space-y-4 bg-slate-50/30">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                      Conversations par Utilisateur ({Object.keys(visitorChatsByUser).length})
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider">
+                      Conversations ({Object.keys(visitorChatsByUser).length})
                     </h4>
                     {onlineCount > 0 && (
                       <span className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/10 text-emerald-600 rounded-full text-[9px] font-bold border border-emerald-500/20">
@@ -4752,70 +4935,99 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                     )}
                   </div>
 
-                  <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                    {Object.keys(visitorChatsByUser).length === 0 ? (
-                      <div className="text-center py-12 text-slate-400 text-xs italic">
-                        Aucun message de visiteur pour le moment.
-                      </div>
-                    ) : (
-                      Object.keys(visitorChatsByUser).map((userName, vIdx) => {
+                  <div className="space-y-2 flex-1 overflow-y-auto max-h-[500px]">
+                    {(() => {
+                      // Filtrer les utilisateurs selon l'onglet actif
+                      const filteredUsers = Object.keys(visitorChatsByUser).filter(userName => {
+                        const meta = threadMetadata[userName] || {};
+                        if (activeFilter === "priority") return !!meta.is_priority;
+                        if (activeFilter === "mine") return meta.assigned_to === "Administrateur" || meta.assigned_to === currentUser?.name;
+                        if (activeFilter === "unassigned") return !meta.assigned_to || meta.assigned_to === "Non assigné";
+                        if (activeFilter === "closed") return !!meta.is_closed;
+                        return !meta.is_closed; // "all" filtre par défaut les non-clos pour éviter d'encombrer
+                      });
+
+                      if (filteredUsers.length === 0) {
+                        return (
+                          <div className="text-center py-16 text-slate-400 text-xs italic">
+                            Aucune discussion ne correspond à ce filtre.
+                          </div>
+                        );
+                      }
+
+                      return filteredUsers.map((userName, vIdx) => {
                         const chatHistory = visitorChatsByUser[userName] || [];
                         const lastMsg = chatHistory[chatHistory.length - 1];
                         const isActive = activeVisitorUserId === userName;
-                        
-                        // Calculer le total des non lus pour cet utilisateur
-                        const unreadCount = chatHistory.reduce((acc, m) => {
-                          const donId = m.donation_id;
-                          // C'est un peu complexe car visitorUnreadCounts est par donation_id
-                          // On va simplifier : si le dernier message est de l'utilisateur et qu'il n'est pas le chat actif
-                          return acc;
-                        }, 0);
-
-                        // Trouver si l'utilisateur est en ligne
                         const isOnline = onlineUsers.some(u => u.name === userName || u.user_metadata?.name === userName);
+                        
+                        const meta = threadMetadata[userName] || {};
 
                         return (
                           <div
                             key={`visitor-chat-${userName}-${vIdx}`}
-                            onClick={() => setActiveVisitorUserId(userName)}
-                            className={`p-3 rounded-lg border text-xs cursor-pointer transition-all ${
+                            onClick={() => {
+                              setActiveVisitorUserId(userName);
+                              // Nettoyer les suggestions IA précédentes
+                              setCopilotSuggestion("");
+                              setCopilotSummary("");
+                              setCopilotAudit("");
+                            }}
+                            className={`p-3.5 rounded-xl border text-xs cursor-pointer transition-all relative ${
                               isActive 
-                                ? "bg-indigo-50 border-indigo-200 font-bold shadow-sm" 
-                                : "bg-white border-slate-150 hover:bg-slate-50"
-                            }`}
+                                ? "bg-indigo-50/80 border-indigo-200 font-bold shadow-md" 
+                                : "bg-white border-slate-150/60 hover:bg-slate-50/50 hover:shadow-sm"
+                            } ${meta.is_closed ? "opacity-60" : ""}`}
                           >
+                            {/* Indicateur de priorité absolue */}
+                            {meta.is_priority && (
+                              <span className="absolute top-0 right-0 h-2.5 w-2.5 bg-rose-500 rounded-bl-lg rounded-tr-lg" title="Priorité élevée" />
+                            )}
+
                             <div className="flex justify-between items-start gap-1">
                               <div className="flex items-center gap-2 truncate">
-                                {isOnline && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />}
-                                <span className="font-extrabold text-slate-950 truncate max-w-[190px]">
+                                {isOnline ? (
+                                  <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                                ) : (
+                                  <span className="h-2 w-2 rounded-full bg-slate-300 shrink-0" />
+                                )}
+                                <span className="font-extrabold text-slate-900 truncate max-w-[150px]">
                                   {userName}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-1">
-                                {chatHistory.length > 0 && (
-                                  <span className="text-[8px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded font-black">
-                                    {chatHistory.length}
+                              <div className="flex items-center gap-1 shrink-0">
+                                {meta.is_priority && (
+                                  <span className="bg-rose-100 text-rose-700 text-[8px] px-1.5 py-0.2 rounded font-black uppercase">
+                                    Alerte
+                                  </span>
+                                )}
+                                {meta.assigned_to && meta.assigned_to !== "Non assigné" && (
+                                  <span className="bg-slate-100 text-slate-600 text-[7px] px-1 py-0.2 rounded font-bold">
+                                    👤 {meta.assigned_to.split(" ")[0]}
                                   </span>
                                 )}
                               </div>
                             </div>
-                            <p className="text-[10px] text-slate-500 mt-1 truncate">
-                              {lastMsg ? `${lastMsg.sender === "agent" ? (lastMsg.user_id === "bot" ? "🤖 Bot" : "Vous") : (lastMsg.user_name || "Lui")} : ${lastMsg.content}` : "Pas de message"}
+
+                            <p className="text-[10px] text-slate-500 mt-1.5 truncate">
+                              {lastMsg ? `${lastMsg.sender === "agent" ? "Vous" : (lastMsg.user_name || "Lui")} : ${lastMsg.content}` : "Pas de message"}
                             </p>
-                            {lastMsg?.created_at && (
-                              <p className="text-[8px] text-slate-400 mt-0.5">
-                                {new Date(lastMsg.created_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                              </p>
-                            )}
+                            
+                            <div className="flex justify-between items-center mt-2 text-[8px] text-slate-400">
+                              <span>
+                                {lastMsg?.created_at && new Date(lastMsg.created_at).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                              {meta.is_closed && <span className="text-slate-500 font-extrabold">🔒 Clos</span>}
+                            </div>
                           </div>
                         );
-                      })
-                    )}
+                      });
+                    })()}
                   </div>
                 </div>
 
                 {/* Fenêtre de chat active */}
-                <div className="md:col-span-8 flex flex-col justify-between min-h-[420px]">
+                <div className="lg:col-span-8 flex flex-col justify-between min-h-[500px]">
                   {activeVisitorUserId ? (
                     (() => {
                       const rawChatHistory = visitorChatsByUser[activeVisitorUserId] || [];
@@ -4823,106 +5035,247 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                         ? activeVisitorUnifiedMessages 
                         : rawChatHistory;
                       const lastMsg = chatHistory[chatHistory.length - 1];
+                      
+                      const meta = threadMetadata[activeVisitorUserId] || {};
 
                       return (
-                        <div className="flex flex-col justify-between h-full flex-1">
-                          {/* En-tête du fil */}
-                          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                        <div className="flex flex-col justify-between h-full flex-1 bg-slate-50/20">
+                          {/* En-tête du fil avec actions de modération/assignation */}
+                          <div className="p-4 border-b border-slate-100 bg-white shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
                             <div>
-                              <span className="text-[9px] font-black text-indigo-600 uppercase block">
-                                Historique Complet & Unifié (Live + Dossier)
+                              <span className="text-[9px] font-black text-indigo-600 uppercase block tracking-wider">
+                                FIL DE DISCUSSION UNIÉ • {meta.is_closed ? "CLOS" : "ACTIF"}
                               </span>
-                              <h4 className="font-extrabold text-slate-900 text-xs">
+                              <h4 className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
                                 Discussion avec {activeVisitorUserId}
+                                {onlineUsers.some(u => u.name === activeVisitorUserId || u.user_metadata?.name === activeVisitorUserId) && (
+                                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                                )}
                               </h4>
                             </div>
-                            <div className="flex items-center gap-2">
-                              {onlineUsers.some(u => u.name === activeVisitorUserId || u.user_metadata?.name === activeVisitorUserId) ? (
-                                <span className="flex items-center gap-1.5 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[9px] font-black border border-emerald-200">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                  EN LIGNE
-                                </span>
-                              ) : (
-                                <span className="text-[9px] font-bold text-slate-400">Hors ligne</span>
-                              )}
+
+                            {/* Actions sur le fil */}
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Assignation */}
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-bold text-slate-400">Assigné à:</span>
+                                <select
+                                  value={meta.assigned_to || "Non assigné"}
+                                  onChange={(e) => updateThreadMetadata(activeVisitorUserId, { assigned_to: e.target.value })}
+                                  className="bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold px-2 py-1 text-slate-700 outline-none focus:ring-1 focus:ring-indigo-500"
+                                >
+                                  <option value="Non assigné">Non assigné</option>
+                                  <option value="Administrateur">Administrateur</option>
+                                  <option value="Agent d'Attribution">Agent d'Attribution</option>
+                                  <option value="Responsable Dons">Responsable Dons</option>
+                                </select>
+                              </div>
+
+                              {/* Bouton Priorité */}
+                              <button
+                                onClick={() => updateThreadMetadata(activeVisitorUserId, { is_priority: !meta.is_priority })}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                                  meta.is_priority 
+                                    ? "bg-rose-100 text-rose-700 border border-rose-200" 
+                                    : "bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200"
+                                }`}
+                              >
+                                {meta.is_priority ? "⚠️ Prioritaire" : "Marquer urgent"}
+                              </button>
+
+                              {/* Bouton Clôture */}
+                              <button
+                                onClick={() => updateThreadMetadata(activeVisitorUserId, { is_closed: !meta.is_closed })}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer ${
+                                  meta.is_closed 
+                                    ? "bg-emerald-100 text-emerald-700 border border-emerald-200" 
+                                    : "bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200"
+                                }`}
+                              >
+                                {meta.is_closed ? "🔓 Réouvrir" : "🔒 Clore"}
+                              </button>
                             </div>
                           </div>
 
-                          {/* Liste des messages */}
-                          <div className="p-4 space-y-3 overflow-y-auto max-h-[300px] flex-1 bg-slate-50/10">
-                            {chatHistory.length === 0 ? (
-                              <div className="text-center py-12 text-slate-400 text-xs">
-                                Début de la discussion.
-                              </div>
-                            ) : (
-                              chatHistory.map((msg, index) => {
-                                const isAgent = msg.sender === "agent" || msg.sender === "bot" || msg.sender_type === "admin" || msg.sender_type === "system" || msg.sender === "system";
-                                const msgDate = new Date(msg.created_at || Date.now());
-                                const showDateHeader = index === 0 || 
-                                  new Date(chatHistory[index-1].created_at).toDateString() !== msgDate.toDateString();
+                          {/* Zone Principale : Messages + Panneau Copilote IA */}
+                          <div className="flex-1 grid grid-cols-1 md:grid-cols-3 overflow-hidden min-h-[350px]">
+                            {/* Messages du fil */}
+                            <div className="md:col-span-2 p-4 space-y-3 overflow-y-auto max-h-[350px] bg-slate-50/10 border-r border-slate-100/60">
+                              {chatHistory.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400 text-xs">
+                                  Début de la discussion.
+                                </div>
+                              ) : (
+                                chatHistory.map((msg, index) => {
+                                  const isAgent = msg.sender === "agent" || msg.sender === "bot" || msg.sender_type === "admin" || msg.sender_type === "system" || msg.sender === "system";
+                                  const msgDate = new Date(msg.created_at || Date.now());
+                                  const showDateHeader = index === 0 || 
+                                    new Date(chatHistory[index-1].created_at).toDateString() !== msgDate.toDateString();
 
-                                return (
-                                  <div key={`chat-msg-${msg.id || 'id'}-${index}`} className="space-y-3">
-                                    {showDateHeader && (
-                                      <div className="flex items-center gap-4 my-4">
-                                        <div className="h-px bg-slate-100 flex-1" />
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-white px-2 py-0.5 border border-slate-100 rounded-full">
-                                          {msgDate.toLocaleDateString("fr-FR", { weekday: 'long', day: 'numeric', month: 'long' })}
-                                        </span>
-                                        <div className="h-px bg-slate-100 flex-1" />
-                                      </div>
-                                    )}
-                                    <div
-                                      className={`flex flex-col max-w-[80%] ${
-                                        isAgent ? "ml-auto items-end" : "mr-auto items-start"
-                                      }`}
-                                    >
-                                      <div className="flex items-center gap-1.5 mb-0.5">
-                                        <span className="text-[9px] font-black text-slate-400">
-                                          {isAgent ? (msg.user_id === "bot" || msg.sender === "bot" || msg.sender_type === "system" ? "🤖 Assistant Automatique" : "Vous (Agent)") : msg.user_name || "Visiteur"}
-                                        </span>
-                                        {!isAgent && (msg.is_auth || msg.sender_type === "user") && (
-                                          <span className="px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-tight bg-emerald-50 text-emerald-600 border border-emerald-100">
-                                            Connecté
+                                  const isAudio = msg.attachment && (msg.attachment.is_audio || msg.attachment.name?.endsWith(".webm") || msg.attachment.type?.startsWith("audio/"));
+
+                                  return (
+                                    <div key={`chat-msg-${msg.id || 'id'}-${index}`} className="space-y-3">
+                                      {showDateHeader && (
+                                        <div className="flex items-center gap-4 my-4">
+                                          <div className="h-px bg-slate-100 flex-1" />
+                                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-white px-2 py-0.5 border border-slate-100 rounded-full">
+                                            {msgDate.toLocaleDateString("fr-FR", { weekday: 'long', day: 'numeric', month: 'long' })}
                                           </span>
-                                        )}
-                                        {msg.donation_id && !msg.donation_id.startsWith("general_") && (
-                                          <span className="px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-tight bg-indigo-50 text-indigo-600 border border-indigo-100">
-                                            Don: {donations.find(d => d.id === msg.donation_id)?.title?.substring(0, 20) || msg.donation_id.substring(0, 8)}...
-                                          </span>
-                                        )}
-                                      </div>
+                                          <div className="h-px bg-slate-100 flex-1" />
+                                        </div>
+                                      )}
                                       <div
-                                        className={`p-3 rounded-xl text-xs leading-normal shadow-sm ${
-                                          isAgent
-                                            ? "bg-indigo-600 text-white rounded-tr-none"
-                                            : "bg-white border border-slate-100 text-slate-800 rounded-tl-none"
+                                        className={`flex flex-col max-w-[85%] ${
+                                          isAgent ? "ml-auto items-end" : "mr-auto items-start"
                                         }`}
                                       >
-                                        {msg.content}
-                                        {msg.attachment && (
-                                          <div className={`mt-2 p-1.5 rounded border flex items-center gap-2 max-w-fit ${isAgent ? "bg-indigo-500/50 border-indigo-400" : "bg-slate-50 border-slate-200"}`}>
-                                            <Paperclip size={12} className={isAgent ? "text-indigo-200" : "text-slate-400"} />
-                                            <a 
-                                              href={typeof msg.attachment === 'string' ? msg.attachment : (msg.attachment.url || msg.attachment.data)} 
-                                              download={msg.attachment.name || "piece_jointe"}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className={`text-[10px] font-bold hover:underline truncate max-w-[200px] ${isAgent ? "text-white" : "text-indigo-600"}`}
-                                            >
-                                              {msg.attachment.name || "Pièce jointe"}
-                                            </a>
-                                          </div>
-                                        )}
+                                        <div className="flex items-center gap-1.5 mb-0.5">
+                                          <span className="text-[9px] font-black text-slate-400">
+                                            {isAgent ? (msg.user_id === "bot" || msg.sender === "bot" || msg.sender_type === "system" ? "🤖 Assistant Automatique" : "Vous (Agent)") : msg.user_name || "Visiteur"}
+                                          </span>
+                                          {!isAgent && (msg.is_auth || msg.sender_type === "user") && (
+                                            <span className="px-1.5 py-0.5 rounded text-[7px] font-bold uppercase tracking-tight bg-emerald-50 text-emerald-600 border border-emerald-100">
+                                              Connecté
+                                            </span>
+                                          )}
+                                        </div>
+                                        
+                                        <div
+                                          className={`p-3 rounded-xl text-xs leading-normal shadow-sm ${
+                                            isAgent
+                                              ? "bg-indigo-600 text-white rounded-tr-none"
+                                              : "bg-white border border-slate-100 text-slate-800 rounded-tl-none"
+                                          }`}
+                                        >
+                                          {msg.content}
+                                          
+                                          {/* Message vocal audio player */}
+                                          {isAudio && (
+                                            <div className="mt-2 p-2 bg-slate-100/90 rounded-lg border border-slate-200 flex flex-col gap-1.5 text-slate-800 min-w-[180px]">
+                                              <span className="text-[8px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                                                🎵 Note Vocale du postulant
+                                              </span>
+                                              <audio 
+                                                src={typeof msg.attachment === "string" ? msg.attachment : (msg.attachment.url || msg.attachment.data)} 
+                                                controls 
+                                                className="h-8 w-full outline-none"
+                                              />
+                                            </div>
+                                          )}
+
+                                          {msg.attachment && !isAudio && (
+                                            <div className={`mt-2 p-1.5 rounded border flex items-center gap-2 max-w-fit ${isAgent ? "bg-indigo-500/50 border-indigo-400" : "bg-slate-50 border-slate-200"}`}>
+                                              <Paperclip size={12} className={isAgent ? "text-indigo-200" : "text-slate-400"} />
+                                              <a 
+                                                href={typeof msg.attachment === 'string' ? msg.attachment : (msg.attachment.url || msg.attachment.data)} 
+                                                download={msg.attachment.name || "piece_jointe"}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className={`text-[10px] font-bold hover:underline truncate max-w-[200px] ${isAgent ? "text-white" : "text-indigo-600"}`}
+                                              >
+                                                {msg.attachment.name || "Pièce jointe"}
+                                              </a>
+                                            </div>
+                                          )}
+                                        </div>
+                                        <span className="text-[8px] text-slate-400 mt-1">
+                                          {msgDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                                        </span>
                                       </div>
-                                      <span className="text-[8px] text-slate-400 mt-1">
-                                        {msgDate.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
-                                      </span>
                                     </div>
-                                  </div>
-                                );
-                              })
-                            )}
+                                  );
+                                })
+                              )}
+                            </div>
+
+                            {/* Panneau de droite : COPILOTE IA */}
+                            <div className="p-4 bg-slate-50/50 flex flex-col space-y-4 overflow-y-auto max-h-[350px]">
+                              <div className="space-y-1">
+                                <h5 className="text-[10px] font-black text-indigo-600 uppercase tracking-wider flex items-center gap-1">
+                                  <Sparkles size={11} className="text-indigo-600" /> Copilote IA Admin
+                                </h5>
+                                <p className="text-[9px] text-slate-400 leading-none">Exploitez Gemini pour auditer et accélérer vos traitements.</p>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-2 pt-1">
+                                {/* Action 1 : Rédiger suggestion de réponse */}
+                                <button
+                                  onClick={() => lastMsg && handleDraftReply(lastMsg.content)}
+                                  disabled={isCopilotLoading || !lastMsg}
+                                  className="w-full text-left bg-white hover:bg-indigo-50/40 border border-slate-200 rounded-xl p-2.5 text-xs font-bold transition-all flex items-center justify-between group cursor-pointer disabled:opacity-50"
+                                >
+                                  <span className="text-[10px] text-slate-800">🪄 Aide à la Rédaction</span>
+                                  <ChevronRight size={12} className="text-slate-400 group-hover:text-indigo-600" />
+                                </button>
+
+                                {/* Action 2 : Synthèse candidat */}
+                                <button
+                                  onClick={() => handleSummarizeProfile({ name: activeVisitorUserId, messages_count: chatHistory.length, latest: lastMsg?.content })}
+                                  disabled={isCopilotLoading}
+                                  className="w-full text-left bg-white hover:bg-indigo-50/40 border border-slate-200 rounded-xl p-2.5 text-xs font-bold transition-all flex items-center justify-between group cursor-pointer disabled:opacity-50"
+                                >
+                                  <span className="text-[10px] text-slate-800">📋 Synthèse Dossier</span>
+                                  <ChevronRight size={12} className="text-slate-400 group-hover:text-indigo-600" />
+                                </button>
+
+                                {/* Action 3 : Audit de document */}
+                                {chatHistory.some(m => m.attachment && !m.attachment.is_audio) && (
+                                  <button
+                                    onClick={() => {
+                                      const fileMsg = chatHistory.find(m => m.attachment && !m.attachment.is_audio);
+                                      if (fileMsg && fileMsg.attachment) {
+                                        const b64 = typeof fileMsg.attachment === 'string' ? fileMsg.attachment : (fileMsg.attachment.data || fileMsg.attachment.url);
+                                        handleAuditDocument(b64, fileMsg.attachment.name || "justificatif.png");
+                                      }
+                                    }}
+                                    disabled={isCopilotLoading}
+                                    className="w-full text-left bg-white hover:bg-indigo-50/40 border border-slate-200 rounded-xl p-2.5 text-xs font-bold transition-all flex items-center justify-between group cursor-pointer disabled:opacity-50"
+                                  >
+                                    <span className="text-[10px] text-rose-800">🔍 Auditer Justificatif</span>
+                                    <ChevronRight size={12} className="text-slate-400 group-hover:text-rose-600" />
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Réponses et Synthèse générées */}
+                              {isCopilotLoading && (
+                                <div className="p-3 bg-white border border-slate-200/50 rounded-xl flex items-center justify-center gap-2 text-[10px] italic text-slate-500">
+                                  <div className="h-3 w-3 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                                  Gemini formule la recommandation...
+                                </div>
+                              )}
+
+                              {copilotSuggestion && (
+                                <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-1.5 animate-fadeIn">
+                                  <h6 className="text-[9px] font-black text-indigo-700 uppercase">Suggestion administrative rédigée :</h6>
+                                  <p className="text-[10px] text-slate-700 leading-relaxed bg-white p-2 rounded border border-indigo-50">{copilotSuggestion}</p>
+                                  <button
+                                    onClick={() => {
+                                      setVisitorReplyInput(copilotSuggestion);
+                                      toast.success("Réponse copiée dans le champ de saisie !");
+                                    }}
+                                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 rounded text-[8px] uppercase cursor-pointer"
+                                  >
+                                    Appliquer au message
+                                  </button>
+                                </div>
+                              )}
+
+                              {copilotSummary && (
+                                <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl space-y-1 animate-fadeIn">
+                                  <h6 className="text-[9px] font-black text-slate-700 uppercase">Synthèse Profil :</h6>
+                                  <p className="text-[10px] text-slate-600 leading-relaxed whitespace-pre-line bg-white p-2 rounded border border-slate-150">{copilotSummary}</p>
+                                </div>
+                              )}
+
+                              {copilotAudit && (
+                                <div className="p-3 bg-rose-50 border border-rose-100 rounded-xl space-y-1 animate-fadeIn">
+                                  <h6 className="text-[9px] font-black text-rose-700 uppercase flex items-center gap-1">⚠️ Rapport d'Audit Documentaire :</h6>
+                                  <p className="text-[10px] text-rose-950 leading-relaxed whitespace-pre-line bg-white p-2 rounded border border-rose-100">{copilotAudit}</p>
+                                </div>
+                              )}
+                            </div>
                           </div>
 
                           {/* Zone d'envoi du message */}
@@ -4931,7 +5284,7 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                               <div className="flex items-center justify-between p-2 bg-indigo-50 border border-indigo-100 rounded-lg">
                                 <div className="flex items-center gap-2 overflow-hidden">
                                   <Paperclip className="h-3 w-3 text-indigo-500 flex-shrink-0" />
-                                  <span className="text-[10px] text-indigo-700 truncate">{visitorReplyFile.name}</span>
+                                  <span className="text-[10px] text-indigo-700 truncate font-bold">{visitorReplyFile.name}</span>
                                 </div>
                                 <button onClick={() => setVisitorReplyFile(null)} className="text-indigo-400 hover:text-indigo-600">
                                   <X className="h-3 w-3" />
@@ -4953,7 +5306,7 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                               <button
                                 type="submit"
                                 disabled={(!visitorReplyInput.trim() && !visitorReplyFile) || isSendingVisitorReply}
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-xs font-bold shadow transition-all cursor-pointer disabled:opacity-50"
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-xs font-bold shadow transition-all cursor-pointer disabled:opacity-50 font-black"
                               >
                                 {isSendingVisitorReply ? "Envoi..." : "Répondre"}
                               </button>
@@ -4963,11 +5316,168 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
                       );
                     })()
                   ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400 text-xs">
-                      <MessageSquare className="h-10 w-10 text-slate-300 mb-2 animate-pulse" />
-                      Sélectionnez une conversation active à gauche pour commencer à clavarder en direct avec le visiteur.
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400 text-xs bg-slate-50/20">
+                      <MessageSquare className="h-10 w-10 text-indigo-200 mb-2 animate-bounce" />
+                      <p className="font-bold text-slate-600">Aucune discussion sélectionnée</p>
+                      <p className="text-slate-400 text-[10px] max-w-[280px] mx-auto mt-1">Sélectionnez une conversation active à gauche ou filtrez par catégorie pour commencer à interagir en direct.</p>
                     </div>
                   )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* TAB : JOURNAL DES APPELS */}
+          {activeTab === "call_logs" && (
+            <motion.div
+              key="call_logs"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="space-y-6"
+            >
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                    <PhoneCall className="h-5 w-5 text-emerald-600 animate-pulse" />
+                    Journal & Traçabilité des Appels Vocaux
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Historique complet des communications téléphoniques directes et des visios des candidats et visiteurs.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={fetchCallLogs}
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RotateCw className={`h-3.5 w-3.5 ${isLoadingCalls ? "animate-spin text-indigo-600" : ""}`} />
+                    Actualiser
+                  </button>
+                </div>
+              </div>
+
+              {/* Stats & Barre de recherche */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Appels Enregistrés</span>
+                  <div className="text-xl font-black text-slate-900 mt-1">{callLogs.length}</div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Appels Anonymes</span>
+                  <div className="text-xl font-black text-amber-600 mt-1">
+                    {callLogs.filter(c => c.user_name === "Anonyme" || !c.user_email).length}
+                  </div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Candidats Connectés</span>
+                  <div className="text-xl font-black text-emerald-600 mt-1">
+                    {callLogs.filter(c => c.user_name !== "Anonyme" && c.user_email).length}
+                  </div>
+                </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex items-center">
+                  <div className="relative w-full">
+                    <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Rechercher par nom ou par don..."
+                      value={callSearchTerm}
+                      onChange={(e) => setCallSearchTerm(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Tableau du Journal d'appels */}
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-700">Journal d'Appels et de Consultations Vocales</span>
+                  <span className="text-[10px] font-semibold text-slate-400">Toutes les données sont horodatées</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-600">
+                    <thead className="bg-slate-50 text-[10px] font-extrabold uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                      <tr>
+                        <th className="px-4 py-3">Date & Heure</th>
+                        <th className="px-4 py-3">Utilisateur / Demandeur</th>
+                        <th className="px-4 py-3">Don Rattaché</th>
+                        <th className="px-4 py-3">Type d'Appel</th>
+                        <th className="px-4 py-3">Durée</th>
+                        <th className="px-4 py-3">Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {callLogs.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-xs">
+                            Aucun appel enregistré pour le moment.
+                          </td>
+                        </tr>
+                      ) : (
+                        callLogs
+                          .filter(c => 
+                            !callSearchTerm || 
+                            c.user_name?.toLowerCase().includes(callSearchTerm.toLowerCase()) || 
+                            c.user_email?.toLowerCase().includes(callSearchTerm.toLowerCase()) ||
+                            c.donation_title?.toLowerCase().includes(callSearchTerm.toLowerCase())
+                          )
+                          .map((call, idx) => {
+                            const isAnon = call.user_name === "Anonyme" || !call.user_email;
+                            const formattedDate = new Date(call.created_at || Date.now()).toLocaleDateString("fr-FR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit"
+                            });
+
+                            return (
+                              <tr key={`call-log-row-${call.id || idx}-${idx}`} className="hover:bg-slate-50/70 transition-colors">
+                                <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">
+                                  <div className="flex items-center gap-1.5">
+                                    <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                                    <span>{formattedDate}</span>
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  {isAnon ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200/60 rounded-full font-bold text-[10px]">
+                                      <User className="h-3 w-3" /> Anonyme
+                                    </span>
+                                  ) : (
+                                    <div>
+                                      <span className="font-extrabold text-slate-900 block">{call.user_name}</span>
+                                      <span className="text-[10px] text-slate-400 block">{call.user_email}</span>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 font-semibold text-slate-800">
+                                  {call.donation_title || "DonationSphere Général"}
+                                  {call.donation_id && <span className="text-[10px] text-slate-400 block font-normal">ID: #{call.donation_id}</span>}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded-md font-bold text-[10px]">
+                                    {call.type || "Appel Vocal Direct"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 font-mono text-slate-700 font-bold whitespace-nowrap">
+                                  {call.duration || "01:15"}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                                    call.status === "Terminé" ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                                  }`}>
+                                    {call.status || "Terminé"}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </motion.div>

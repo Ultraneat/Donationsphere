@@ -13,6 +13,7 @@ import ContactPage from "./components/ContactPage";
 import PrivacyPolicy from "./components/PrivacyPolicy";
 import TermsOfUse from "./components/TermsOfUse";
 import CookieBanner from "./components/CookieBanner";
+import AiAssistantWidget from "./components/AiAssistantWidget";
 import { registerUser, getSocket } from "./lib/socket";
 import { 
   Gift, 
@@ -1866,6 +1867,8 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      <AiAssistantWidget currentUser={currentUser} />
   
     </div>
   );

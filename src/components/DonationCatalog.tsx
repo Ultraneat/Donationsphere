@@ -38,7 +38,13 @@ import {
   CheckCircle,
   RotateCcw,
   Paperclip,
-  ShieldCheck
+  ShieldCheck,
+  Mic,
+  Square,
+  PhoneCall,
+  PhoneOff,
+  Phone,
+  Clock
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { getSocket, sendMessage, joinConversation } from "../lib/socket";
@@ -136,6 +142,114 @@ export default function DonationCatalog({
   });
 
   const effectiveUserId = currentUser?.id || guestId;
+
+  // Gestion de l'enregistrement des messages vocaux
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingIntervalRef = useRef<any>(null);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64Data = reader.result as string;
+          setChatAttachment({
+            name: `Vocal_DonationSphere_${Date.now().toString().slice(-4)}.webm`,
+            type: "audio/webm",
+            data: base64Data,
+            is_audio: true,
+            duration: recordingSeconds
+          });
+        };
+        reader.readAsDataURL(audioBlob);
+        
+        // Arrêter toutes les pistes micro
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingSeconds(prev => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error("Erreur micro:", err);
+      alert("Impossible d'accéder au microphone.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingIntervalRef.current) {
+        clearInterval(recordingIntervalRef.current);
+      }
+    }
+  };
+
+  // État et gestion des Appels Vocaux Directs avec l'Agent
+  const [activeCallDonation, setActiveCallDonation] = useState<Donation | null>(null);
+  const [callDuration, setCallDuration] = useState<number>(0);
+  const [callState, setCallState] = useState<"calling" | "connected" | "ended">("calling");
+  const callTimerRef = useRef<any>(null);
+
+  const handleStartCall = (donation: Donation) => {
+    setActiveCallDonation(donation);
+    setCallState("calling");
+    setCallDuration(0);
+
+    // Enregistrer l'appel dans le journal d'administration (Backend)
+    fetch("/api/calls", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        donation_id: donation.id,
+        donation_title: donation.title,
+        user_name: currentUser ? (currentUser.name || currentUser.email) : "Anonyme",
+        user_email: currentUser ? currentUser.email : null,
+        type: "Appel Direct Agent",
+        duration: "01:25",
+        status: "Terminé"
+      })
+    }).catch(err => console.error("Erreur log appel:", err));
+
+    // Simulation de décrochage après 2 secondes
+    setTimeout(() => {
+      setCallState("connected");
+      callTimerRef.current = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    }, 1800);
+  };
+
+  const handleEndCall = (openChatAfter = false) => {
+    if (callTimerRef.current) clearInterval(callTimerRef.current);
+    setCallState("ended");
+    const targetDonation = activeCallDonation;
+    setTimeout(() => {
+      setActiveCallDonation(null);
+      if (openChatAfter && targetDonation) {
+        setSelectedDonationForAgent(targetDonation);
+      }
+    }, 400);
+  };
 
   const [unifiedMessages, setUnifiedMessages] = useState<any[]>([]);
 
@@ -690,8 +804,8 @@ export default function DonationCatalog({
                   {/* Spécifications rapides (Max 2 clés) */}
                   {don.specifications && (
                     <div className="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100 text-[11px]">
-                      {Object.entries(don.specifications).slice(0, 2).map(([key, value]) => (
-                        <div key={key} className="flex justify-between items-center px-1">
+                      {Object.entries(don.specifications).slice(0, 2).map(([key, value], specIdx) => (
+                        <div key={`don-spec-${key}-${specIdx}`} className="flex justify-between items-center px-1">
                           <span className="text-slate-400 truncate">{key}</span>
                           <span className="font-semibold text-slate-700 truncate">{value}</span>
                         </div>
@@ -1038,8 +1152,8 @@ export default function DonationCatalog({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 text-slate-700">
-                          {Object.entries(selectedDonationForDetails.specifications).map(([key, value]) => (
-                            <tr key={key} className="hover:bg-slate-50/50 transition-colors">
+                          {Object.entries(selectedDonationForDetails.specifications).map(([key, value], specIdx) => (
+                            <tr key={`det-spec-${key}-${specIdx}`} className="hover:bg-slate-50/50 transition-colors">
                               <td className="px-4 py-2.5 font-medium text-slate-500">{key}</td>
                               <td className="px-4 py-2.5 font-bold text-slate-900">{value}</td>
                             </tr>
@@ -1178,6 +1292,17 @@ export default function DonationCatalog({
                       <MessageSquare className="h-3.5 w-3.5" />
                       Ouvrir Chat Direct
                     </button>
+                    <button
+                      onClick={() => {
+                        const don = selectedDonationForDetails;
+                        setSelectedDonationForDetails(null);
+                        handleStartCall(don);
+                      }}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow cursor-pointer flex items-center gap-1"
+                    >
+                      <PhoneCall className="h-3.5 w-3.5" />
+                      Appeler l'Agent
+                    </button>
                   </div>
                 )}
               </div>
@@ -1257,12 +1382,27 @@ export default function DonationCatalog({
                     </span>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setSelectedDonationForAgent(null)}
-                  className="text-slate-400 hover:text-white p-1 rounded-full cursor-pointer"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                
+                <div className="flex items-center gap-2 ml-auto">
+                  {/* Bouton WhatsApp Gateway */}
+                  <button
+                    onClick={() => {
+                      const text = `Bonjour ! Je souhaite en savoir plus sur votre don : "${selectedDonationForAgent.title}" (Réf: #${selectedDonationForAgent.id}). Pouvez-vous m'accompagner ?`;
+                      window.open(`https://wa.me/33600000000?text=${encodeURIComponent(text)}`, "_blank");
+                    }}
+                    className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black px-2.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-sm"
+                    title="Contacter via WhatsApp"
+                  >
+                    WhatsApp
+                  </button>
+                  
+                  <button 
+                    onClick={() => setSelectedDonationForAgent(null)}
+                    className="text-slate-400 hover:text-white p-1 rounded-full cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
 
               {/* Chat Messages Panel */}
@@ -1285,9 +1425,12 @@ export default function DonationCatalog({
                     const isAdmin = msg.sender_type === "admin" || msg.sender === "agent";
                     const isUser = msg.sender_type === "user" || msg.sender === "user";
 
+                    // Vérifier si l'attachement est un message vocal
+                    const isAudioAttachment = msg.attachment && (msg.attachment.is_audio || msg.attachment.name?.endsWith(".webm") || msg.attachment.type?.startsWith("audio/"));
+
                     return (
                       <div 
-                        key={idx} 
+                        key={`agent-chat-msg-${msg.id || idx}-${idx}`} 
                         className={`flex flex-col max-w-[85%] ${isUser ? "ml-auto items-end" : "mr-auto items-start"}`}
                       >
                         <span className="text-[9px] font-bold text-slate-400 mb-0.5 flex items-center gap-1">
@@ -1296,10 +1439,11 @@ export default function DonationCatalog({
                             <span className={`px-1.5 py-0.5 rounded-full text-[7px] uppercase tracking-tighter ${
                               currentUser ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
                             }`}>
-                              {currentUser ? "Connecté" : "Invité"}
+                              {currentUser ? "Connecté Supabase" : "Invité"}
                             </span>
                           )}
                         </span>
+                        
                         <div className={`p-2.5 rounded-xl text-xs leading-relaxed shadow-sm ${
                           isSystem 
                             ? "bg-slate-100 text-slate-700 rounded-tl-none border border-slate-200/50"
@@ -1308,7 +1452,23 @@ export default function DonationCatalog({
                               : "bg-white text-slate-800 rounded-tl-none border border-slate-200/40"
                         }`}>
                           {msg.content}
-                          {msg.attachment && (
+                          
+                          {/* Rendu spécifique Message Vocal */}
+                          {isAudioAttachment && (
+                            <div className="mt-2 p-2 bg-slate-100/90 rounded-lg border border-slate-200 flex flex-col gap-1.5 text-slate-800 min-w-[200px]">
+                              <span className="text-[8px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                                <Volume2 size={10} className="text-indigo-600 animate-pulse" /> Note Vocale
+                              </span>
+                              <audio 
+                                src={typeof msg.attachment === "string" ? msg.attachment : (msg.attachment.url || msg.attachment.data)} 
+                                controls 
+                                className="h-8 w-full outline-none"
+                              />
+                            </div>
+                          )}
+
+                          {/* Rendu Fichier classique */}
+                          {msg.attachment && !isAudioAttachment && (
                             <div className={`mt-2 p-1.5 rounded border flex items-center gap-2 max-w-fit ${isUser ? "bg-indigo-500/50 border-indigo-400" : "bg-slate-50 border-slate-200"}`}>
                               <Paperclip size={12} className={isUser ? "text-indigo-200" : "text-slate-400"} />
                               <a 
@@ -1321,6 +1481,24 @@ export default function DonationCatalog({
                                 {msg.attachment.name || "Pièce jointe"}
                               </a>
                             </div>
+                          )}
+                        </div>
+
+                        {/* Horodatage + Statuts de lecture ticks */}
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <span className="text-[8px] text-slate-400">
+                            {new Date(msg.created_at || Date.now()).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          {isUser && (
+                            <span className="text-[9px] select-none font-bold">
+                              {msg.status === "read" || msg.read_at ? (
+                                <span className="text-emerald-500" title="Lu">✓✓</span>
+                              ) : msg.status === "delivered" ? (
+                                <span className="text-slate-400" title="Délivré">✓✓</span>
+                              ) : (
+                                <span className="text-slate-300" title="Envoyé">✓</span>
+                              )}
+                            </span>
                           )}
                         </div>
                       </div>
@@ -1340,37 +1518,88 @@ export default function DonationCatalog({
 
               {/* Input Chat */}
               <div className="p-3 bg-white border-t border-slate-100 space-y-2">
+                {/* Suggestions de questions préliminaires */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                  {[
+                    "Comment postuler à ce don ?",
+                    "Quels sont les justificatifs requis ?",
+                    "Y a-t-il des frais de transfert ?",
+                    "Combien de temps prend la réponse ?"
+                  ].map((q, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => {
+                        setChatInput(q);
+                      }}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 border border-slate-200/80 rounded-full text-[10px] font-semibold text-slate-600 shrink-0 transition-all cursor-pointer"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+
                 {chatAttachment && (
                   <div className="flex items-center justify-between p-2 bg-indigo-50 border border-indigo-100 rounded-lg">
                     <div className="flex items-center gap-2 overflow-hidden">
-                      <Paperclip className="h-3 w-3 text-indigo-500" />
-                      <span className="text-[10px] text-indigo-700 truncate">{chatAttachment.name}</span>
+                      {chatAttachment.is_audio ? <Volume2 className="h-3 w-3 text-indigo-500" /> : <Paperclip className="h-3 w-3 text-indigo-500" />}
+                      <span className="text-[10px] text-indigo-700 truncate font-bold">{chatAttachment.name}</span>
                     </div>
                     <button onClick={() => setChatAttachment(null)} className="text-indigo-400 hover:text-indigo-600">
                       <X className="h-3 w-3" />
                     </button>
                   </div>
                 )}
-                <form onSubmit={handleAgentChatSubmit} className="flex gap-2">
-                  <label className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg cursor-pointer text-slate-400 transition-all flex items-center justify-center">
-                    <Paperclip className="h-3.5 w-3.5" />
-                    <input type="file" className="hidden" onChange={handleChatFileChange} />
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Écrivez votre message..."
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
-                  />
-                  <button
-                    type="submit"
-                    disabled={(!chatInput.trim() && !chatAttachment) || isSendingChat}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white p-2.5 rounded-lg shadow-md transition-all flex items-center justify-center cursor-pointer disabled:opacity-50"
-                  >
-                    {isSendingChat ? <div className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                  </button>
-                </form>
+                
+                {/* Interface Enregistrement Audio en cours */}
+                {isRecording ? (
+                  <div className="flex items-center justify-between bg-rose-50 border border-rose-100 p-2 rounded-xl animate-pulse">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-rose-600 animate-ping" />
+                      <span className="text-xs font-extrabold text-rose-700">Enregistrement... {recordingSeconds}s</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={stopRecording}
+                      className="bg-rose-600 text-white p-1.5 rounded-lg flex items-center justify-center cursor-pointer hover:bg-rose-700"
+                    >
+                      <Square className="h-3 w-3 fill-current" />
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleAgentChatSubmit} className="flex gap-1.5 items-center">
+                    <label className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl cursor-pointer text-slate-400 transition-all flex items-center justify-center shrink-0">
+                      <Paperclip className="h-3.5 w-3.5" />
+                      <input type="file" className="hidden" onChange={handleChatFileChange} />
+                    </label>
+
+                    {/* Microphone button */}
+                    <button
+                      type="button"
+                      onClick={startRecording}
+                      className="p-2.5 bg-slate-50 hover:bg-rose-50 hover:text-rose-600 border border-slate-200 rounded-xl text-slate-400 transition-all flex items-center justify-center shrink-0 cursor-pointer"
+                      title="Enregistrer un message vocal"
+                    >
+                      <Mic className="h-3.5 w-3.5" />
+                    </button>
+
+                    <input
+                      type="text"
+                      placeholder="Écrivez votre message..."
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all"
+                    />
+                    
+                    <button
+                      type="submit"
+                      disabled={(!chatInput.trim() && !chatAttachment) || isSendingChat}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white p-2.5 rounded-xl shadow-md transition-all flex items-center justify-center cursor-pointer disabled:opacity-50 shrink-0"
+                    >
+                      {isSendingChat ? <div className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    </button>
+                  </form>
+                )}
               </div>
             </motion.div>
           </div>
@@ -1817,6 +2046,112 @@ export default function DonationCatalog({
                   <div className="h-1 bg-slate-700 rounded-full overflow-hidden">
                     <div className="h-full bg-indigo-500 w-[40%]" />
                   </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* POPUP SIMULATION D'APPEL VOCAL DIRECT AVEC L'AGENT */}
+      <AnimatePresence>
+        {activeCallDonation && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+            />
+
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 max-w-sm w-full text-center text-white shadow-2xl z-10 overflow-hidden"
+            >
+              {/* Halos lumineux en fond */}
+              <div className="absolute -top-12 -left-12 w-32 h-32 bg-emerald-500/10 rounded-full blur-2xl" />
+              <div className="absolute -bottom-12 -right-12 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl" />
+
+              <div className="relative z-10 flex flex-col items-center space-y-6">
+                {/* Header Agent */}
+                <div className="space-y-2">
+                  <div className="relative mx-auto w-24 h-24 rounded-full overflow-hidden border-4 border-emerald-500/30 shadow-xl flex items-center justify-center bg-slate-800">
+                    <img
+                      src={activeCallDonation.agent_avatar || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200"}
+                      alt={activeCallDonation.agent_name || "Agent Solidaire"}
+                      className="w-full h-full object-cover"
+                    />
+                    <span className="absolute bottom-1 right-1 h-4 w-4 bg-emerald-500 rounded-full border-2 border-slate-900 animate-pulse" />
+                  </div>
+                  <h4 className="text-lg font-black text-white flex items-center justify-center gap-1.5">
+                    {activeCallDonation.agent_name || "Agent d'Attribution"}
+                  </h4>
+                  <p className="text-xs font-semibold text-emerald-400">
+                    {activeCallDonation.agent_phone || "+33 1 89 20 44 10"}
+                  </p>
+                  <p className="text-[10px] text-slate-400 max-w-[220px] mx-auto truncate">
+                    Rattaché à : {activeCallDonation.title}
+                  </p>
+                </div>
+
+                {/* État de la connexion & chrono */}
+                <div className="space-y-2">
+                  {callState === "calling" ? (
+                    <div className="flex items-center justify-center gap-2 text-amber-400 text-xs font-bold animate-pulse">
+                      <PhoneCall className="h-4 w-4 animate-bounce" />
+                      Appel en cours de connexion...
+                    </div>
+                  ) : callState === "connected" ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-center gap-2 text-emerald-400 text-xs font-mono font-bold">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+                        {Math.floor(callDuration / 60).toString().padStart(2, '0')}:{(callDuration % 60).toString().padStart(2, '0')}
+                      </div>
+                      
+                      {/* Onde sonore animée */}
+                      <div className="flex items-center justify-center gap-1 h-6">
+                        <span className="w-1 bg-emerald-500 rounded-full h-3 animate-[pulse_0.6s_infinite]" />
+                        <span className="w-1 bg-emerald-400 rounded-full h-6 animate-[pulse_0.4s_infinite]" />
+                        <span className="w-1 bg-emerald-500 rounded-full h-4 animate-[pulse_0.7s_infinite]" />
+                        <span className="w-1 bg-emerald-300 rounded-full h-5 animate-[pulse_0.5s_infinite]" />
+                        <span className="w-1 bg-emerald-500 rounded-full h-2 animate-[pulse_0.8s_infinite]" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-slate-400 text-xs font-bold">Appel terminé</div>
+                  )}
+                </div>
+
+                {/* Identification de l'utilisateur qui appelle */}
+                <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700/60 w-full text-left flex items-center justify-between">
+                  <div className="text-[10px]">
+                    <span className="text-slate-400 block">Appel émis par :</span>
+                    <span className="font-extrabold text-white">{currentUser ? (currentUser.name || currentUser.email) : "Anonyme (Non connecté)"}</span>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold ${currentUser ? "bg-emerald-950 text-emerald-400 border border-emerald-800" : "bg-slate-700 text-slate-300"}`}>
+                    {currentUser ? "Authentifié" : "Anonyme"}
+                  </span>
+                </div>
+
+                {/* Boutons d'action */}
+                <div className="flex flex-col gap-2 w-full pt-2">
+                  <button
+                    onClick={() => handleEndCall(true)}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    Poursuivre sur le Chat Direct
+                  </button>
+
+                  <button
+                    onClick={() => handleEndCall(false)}
+                    className="w-full bg-rose-600 hover:bg-rose-700 text-white font-extrabold py-3 px-4 rounded-xl text-xs transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <PhoneOff className="h-4 w-4" />
+                    Raccrocher l'Appel
+                  </button>
                 </div>
               </div>
             </motion.div>

@@ -118,3 +118,17 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
     value JSONB NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
 );
+
+CREATE TABLE IF NOT EXISTS public.call_logs (
+    id TEXT PRIMARY KEY,
+    donation_id TEXT,
+    donation_title TEXT,
+    user_name TEXT,
+    user_email TEXT,
+    type TEXT DEFAULT 'Appel Direct Agent',
+    duration TEXT DEFAULT '00:00',
+    status TEXT DEFAULT 'Terminé',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc', NOW())
+);
+
+ALTER TABLE public.call_logs DISABLE ROW LEVEL SECURITY;

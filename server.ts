@@ -13,6 +13,18 @@ import { execSync } from "child_process";
 import dotenv from "dotenv";
 dotenv.config();
 
+import { GoogleGenAI } from "@google/genai";
+
+// Initialisation de Google GenAI avec clé d'API masquée
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
+  httpOptions: {
+    headers: {
+      'User-Agent': 'aistudio-build',
+    }
+  }
+});
+
 const app = express();
 const PORT = 3000;
 const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -43,6 +55,8 @@ let localDb = {
   application_messages: [] as any[],
   agent_conversations: {} as Record<string, any[]>,
   chatbot_training: [] as any[],
+  chat_threads_metadata: {} as Record<string, any>,
+  call_logs: [] as any[],
   settings: {} as Record<string, any>,
   users: [
     { 
@@ -102,7 +116,9 @@ if (fs.existsSync(LOCAL_DB_FILE)) {
 
 localDb.settings = localDb.settings || {};
 localDb.chatbot_training = localDb.chatbot_training || [];
+localDb.chat_threads_metadata = localDb.chat_threads_metadata || {};
 localDb.donations = localDb.donations || [];
+localDb.call_logs = localDb.call_logs || [];
 localDb.donations = localDb.donations.map((d: any) => ({
   ...d,
   views_count: typeof d.views_count === 'number' ? d.views_count : Math.floor(Math.random() * 80) + 15
@@ -525,6 +541,8 @@ app.post("/api/db-reset", (req, res) => {
       }
     ],
     chatbot_training: [],
+    chat_threads_metadata: {},
+    call_logs: [],
     settings: {}
   };
   saveLocalDb();
@@ -2466,6 +2484,313 @@ app.post("/api/agent-conversations/:donation_id", async (req, res) => {
   }
   
   res.json(localMsg);
+});
+
+// J. API GEMINI / AI ET GESTION MESSAGERIE DE L'ASSISTANT ET COPILOTE
+app.get("/api/calls", async (req, res) => {
+  try {
+    let calls = [];
+    let fetchedFromSupabase = false;
+
+    if (isSupabaseConnected) {
+      try {
+        const { data, error } = await supabase.from("call_logs").select("*").order("created_at", { ascending: false });
+        if (!error && Array.isArray(data)) {
+          calls = data;
+          fetchedFromSupabase = true;
+        }
+      } catch (e) {}
+    }
+
+    if (!fetchedFromSupabase) {
+      calls = localDb.call_logs || [];
+    }
+
+    calls.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    res.json({ calls });
+  } catch (err: any) {
+    res.status(500).json({ error: "Erreur récupération des appels", details: err.message });
+  }
+});
+
+app.post("/api/calls", async (req, res) => {
+  try {
+    const { donation_id, donation_title, user_name, user_email, duration, status, type } = req.body;
+    const newCall = {
+      id: `call-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      donation_id: donation_id || null,
+      donation_title: donation_title || "DonationSphere Général",
+      user_name: user_name && user_name.trim() !== "" ? user_name : "Anonyme",
+      user_email: user_email || null,
+      type: type || "Appel Direct Agent",
+      duration: duration || "01:00",
+      status: status || "Terminé",
+      created_at: new Date().toISOString()
+    };
+
+    if (isSupabaseConnected) {
+      try {
+        await supabase.from("call_logs").insert([newCall]);
+      } catch (e) {}
+    }
+    
+    localDb.call_logs = localDb.call_logs || [];
+    localDb.call_logs.unshift(newCall);
+    saveLocalDb();
+
+    console.log(`[CALL LOGGED] Appel enregistré pour : ${newCall.user_name} (${newCall.donation_title})`);
+    res.json({ success: true, call: newCall });
+  } catch (err: any) {
+    res.status(500).json({ error: "Erreur enregistrement de l'appel" });
+  }
+});
+
+app.post("/api/ai/chat", async (req, res) => {
+  const { message, history, user, donationTitle } = req.body;
+  if (!message) {
+    return res.status(400).json({ error: "Le message est requis." });
+  }
+
+  const normalizedInput = message.toLowerCase().trim();
+  const isUserLoggedIn = Boolean(user && (user.email || user.name));
+  const userName = isUserLoggedIn ? (user.name || user.email.split('@')[0]) : "Anonyme";
+  const userRole = isUserLoggedIn ? (user.role === 'admin' ? 'Administrateur' : 'Demandeur Connecté') : 'Visiteur Anonyme';
+
+  // 1. MÉTHODE HYBRIDE : Vérification prioritaire dans la base de connaissances locale (chatbot_training)
+  try {
+    let trainingRules: any[] = [];
+    if (isSupabaseConnected) {
+      try {
+        const { data } = await supabase.from("chatbot_training").select("*");
+        if (data && data.length > 0) trainingRules = data;
+      } catch (e) {}
+    }
+    if (trainingRules.length === 0) {
+      trainingRules = localDb.chatbot_training || [];
+    }
+
+    // Chercher une correspondance par mots-clés dans la base locale
+    for (const rule of trainingRules) {
+      if (rule.keywords && Array.isArray(rule.keywords)) {
+        const hasMatch = rule.keywords.some((kw: string) => normalizedInput.includes(kw.toLowerCase()));
+        if (hasMatch && rule.response) {
+          console.log(`[CHAT HYBRIDE] Correspondance locale trouvée pour : "${message}" -> Règle : ${rule.id || 'local'}`);
+          
+          let adaptedResponse = rule.response;
+          if (isUserLoggedIn) {
+            if (adaptedResponse.includes("[USER_NAME]")) {
+              adaptedResponse = adaptedResponse.replace(/\[USER_NAME\]/g, userName);
+            } else {
+              adaptedResponse = `Bonjour ${userName} (${userRole}) ! ` + adaptedResponse;
+            }
+          } else {
+            if (adaptedResponse.includes("[USER_NAME]")) {
+              adaptedResponse = adaptedResponse.replace(/\[USER_NAME\]/g, "Visiteur");
+            }
+          }
+          return res.json({ response: adaptedResponse, source: "local", user_recognized: isUserLoggedIn });
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[CHAT HYBRIDE] Erreur vérification locale :", err);
+  }
+
+  // 2. Si aucune règle locale ne correspond, faire appel au moteur d'IA en arrière-plan
+  try {
+    let donations = [];
+    if (isSupabaseConnected) {
+      try {
+        const { data } = await supabase.from("donations").select("*");
+        if (data) donations = data;
+      } catch (e) {}
+    }
+    if (donations.length === 0) {
+      donations = (localDb.donations || []).filter((d: any) => d.status === "active" || d.status === "publie" || d.status === "disponible");
+    }
+
+    const catalogContext = donations.map((d: any) => {
+      return `- **[${d.title}]** (Réf: #${d.id}, Catégorie: ${d.category || 'Général'}) : ${d.description || 'Pas de description.'}
+        Critères d'éligibilité : ${d.eligibility_criteria || 'Ouvert à tous les porteurs de projet.'}
+        Frais de transfert : ${d.transfer_fees || 'Entièrement pris en charge par la fondation.'}
+        Localisation : ${d.location || 'Disponible nationalement.'}`;
+    }).join("\n\n");
+
+    const userContextInfo = isUserLoggedIn
+      ? `INFORMATIONS SUR L'UTILISATEUR ACTUEL EN TRAIN DE VOUS PARLER :
+- Statut : CONNECTÉ SUR LA PLATEFORME
+- Nom / Identifiant : ${userName}
+- Email : ${user.email || 'N/A'}
+- Rôle : ${userRole}
+Directives : Accueille l'utilisateur chaleureusement par son nom (${userName}). Comme il est déjà connecté, tu peux lui confirmer qu'il peut postuler directement en 1 clic ou suivre l'état de ses candidatures dans son espace candidat.`
+      : `INFORMATIONS SUR L'UTILISATEUR ACTUEL EN TRAIN DE VOUS PARLER :
+- Statut : VISITEUR ANONYME (NON CONNECTÉ)
+Directives : Ne l'appelle pas par un nom propre. Rappelle-lui poliment qu'il peut créer un compte gratuit ou se connecter pour déposer une candidature officielle sur les dons.`;
+
+    const currentDonationContext = donationTitle 
+      ? `\nDON SPÉCIFIQUE ACTUELLEMENT CONSULTÉ PAR L'UTILISATEUR : "${donationTitle}"\n` 
+      : "";
+
+    const systemInstruction = `Tu es le "Conseiller Solidaire", un conseiller virtuel contextuel et bienveillant de la fondation DonationSphere.
+Ton rôle est d'accompagner, d'orienter et de conseiller les postulants sur le catalogue de dons disponibles et les démarches d'éligibilité.
+
+${userContextInfo}
+${currentDonationContext}
+
+Voici le catalogue de dons actifs réels dans notre système actuellement :
+${catalogContext}
+
+Directives conversationnelles :
+1. Analyse le besoin de l'utilisateur et oriente-le précisément vers un ou plusieurs dons du catalogue ci-dessus qui correspondent à sa situation ou son projet. Cite explicitement le titre et la référence (ex: #ID) du don.
+2. Si aucun don ne correspond, explique gentiment que de nouvelles dotations sont publiées régulièrement.
+3. Explique les démarches d'éligibilité : le candidat doit soumettre un dossier de candidature complet avec justificatifs d'identité, de situation, de devis ou de justificatif d'activité professionnelle.
+4. Lève toute inquiétude concernant d'éventuels frais cachés : rappelle que l'octroi du don est GRATUIT, les frais notariaux ou légaux de transfert sont pris en charge à 100% par la fondation DonationSphere. Il n'y a JAMAIS de fonds à envoyer par avance.
+5. Sois toujours chaleureux, poli, professionnel, et formule des réponses claires en français sans jargon excessif.
+6. Ne simule pas d'interactions avec un humain et n'invente jamais de dons qui ne figurent pas dans la liste ci-dessus. Accompagne l'utilisateur pour qu'il puisse soumettre son dossier officiel sur la plateforme.
+7. Ne mentionne jamais le mot "IA", "AI" ou "algorithme génératif" à l'utilisateur. Tu es le Conseiller Solidaire.`;
+
+    const contents = [];
+    if (Array.isArray(history)) {
+      // Formater l'historique pour le SDK @google/genai
+      for (const turn of history) {
+        if (turn.role === "user" || turn.role === "model") {
+          contents.push({
+            role: turn.role,
+            parts: [{ text: turn.content || turn.message || "" }]
+          });
+        }
+      }
+    }
+    // Ajouter le message actuel
+    contents.push({
+      role: "user",
+      parts: [{ text: message }]
+    });
+
+    console.log(`[AI] Appel Gemini pour le message: "${message.substring(0, 60)}..."`);
+    const response = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: contents,
+      config: {
+        systemInstruction,
+        temperature: 0.7,
+      }
+    });
+
+    const aiResponseText = response.text || "Je n'ai pas pu analyser votre demande, veuillez la reformuler.";
+    res.json({ response: aiResponseText, source: "ai" });
+  } catch (error: any) {
+    console.error("[AI] Erreur Gemini Chat:", error);
+    // Fallback ultime en cas de quota dépassé
+    res.json({ 
+      response: "Je suis votre Conseiller Solidaire. Pour postuler à un don ou connaître les critères d'éligibilité, vous pouvez consulter la fiche de chaque don dans notre catalogue ou remplir un formulaire de candidature. Toutes nos attributions sont 100% gratuites.",
+      source: "fallback"
+    });
+  }
+});
+
+app.post("/api/ai/copilot", async (req, res) => {
+  const { action, message, history, profile, document_base64, document_name } = req.body;
+
+  try {
+    if (action === "draft-reply") {
+      const systemInstruction = `Tu es le "Copilote IA de l'Administration", un assistant d'aide à la décision pour les modérateurs de la fondation DonationSphere.
+Propose une réponse administrative personnalisée, professionnelle, claire et courtoise à envoyer au candidat suite à son message.
+S'adapter au ton de la conversation. Tu peux proposer 3 options de réponses rapides (Acceptation de dossier, Demande de document complémentaire, ou Rejet motivé).`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.7-flash",
+        contents: `Voici le dernier message du candidat : "${message}"
+        Propose une réponse d'aide à la rédaction administrative. Renvoie uniquement le texte rédigé sous forme de suggestion prête à copier.`,
+        config: { systemInstruction }
+      });
+
+      return res.json({ suggestion: response.text });
+    }
+
+    if (action === "summarize") {
+      const systemInstruction = `Résume en 3 points clés le profil d'un postulant, son besoin, et ses motivations à partir des informations fournies pour faire gagner du temps aux modérateurs de la fondation.`;
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3.7-flash",
+        contents: `Profil et informations de candidature : ${JSON.stringify(profile || {})}`,
+        config: { systemInstruction }
+      });
+
+      return res.json({ summary: response.text });
+    }
+
+    if (action === "audit-document") {
+      if (!document_base64) {
+        return res.status(400).json({ error: "Le document au format Base64 est requis." });
+      }
+
+      // Nettoyer le préfixe base64
+      const base64Data = document_base64.replace(/^data:image\/\w+;base64,/, "").replace(/^data:application\/pdf;base64,/, "");
+
+      const imagePart = {
+        inlineData: {
+          mimeType: "image/png",
+          data: base64Data,
+        },
+      };
+
+      const systemInstruction = `Tu es un expert d'audit de conformité documentaire de la fondation.
+Analyse la pièce justificative fournie (pièce d'identité, devis, attestation fiscale, justificatif d'activité).
+Détecte d'éventuelles incohérences flagrantes, fraudes évidentes, flous suspects, retouches graphiques visibles ou expirations de validité.
+Renvoie un rapport d'audit concis en 3 points (Statut: Conforme / Suspect, Raisons de l'avis, Recommandation de modération).`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.7-flash",
+        contents: {
+          parts: [
+            imagePart,
+            { text: `Analyse ce document nommé "${document_name || 'document'}" pour détecter les incohérences ou indices de fraude documentaire.` }
+          ]
+        },
+        config: { systemInstruction }
+      });
+
+      return res.json({ audit: response.text });
+    }
+
+    res.status(400).json({ error: "Action non prise en charge par le Copilote IA." });
+  } catch (error: any) {
+    console.error("[AI COPILOT] Erreur:", error);
+    res.status(500).json({ error: "Erreur d'analyse de l'IA Copilote.", details: error.message });
+  }
+});
+
+// K. ENDPOINTS GESTION ET MODÉRATION DU FIL DE DISCUSSION (METADATA)
+app.get("/api/chat-threads/metadata", (req, res) => {
+  res.json(localDb.chat_threads_metadata || {});
+});
+
+app.post("/api/chat-threads/metadata/:user_key", (req, res) => {
+  const { user_key } = req.params;
+  const { assigned_to, is_priority, is_closed } = req.body;
+
+  if (!localDb.chat_threads_metadata) localDb.chat_threads_metadata = {};
+  
+  localDb.chat_threads_metadata[user_key] = {
+    ...localDb.chat_threads_metadata[user_key],
+    ...(assigned_to !== undefined ? { assigned_to } : {}),
+    ...(is_priority !== undefined ? { is_priority } : {}),
+    ...(is_closed !== undefined ? { is_closed } : {})
+  };
+
+  saveLocalDb();
+
+  // Diffuser les modifications en temps réel via WebSockets
+  const io = req.app.get("io");
+  if (io) {
+    io.emit("thread_metadata:updated", {
+      user_key,
+      metadata: localDb.chat_threads_metadata[user_key]
+    });
+  }
+
+  res.json(localDb.chat_threads_metadata[user_key]);
 });
 
 // G2. ENDPOINTS BASE D'ENTRAÎNEMENT DU CHATBOT
