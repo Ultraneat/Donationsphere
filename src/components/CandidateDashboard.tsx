@@ -702,7 +702,7 @@ export default function CandidateDashboard({
         success: true,
         fileName: finalFileName,
         url: finalFileUrl,
-        analysis: "Document certifié conforme par l'analyse algorithmique de la sandbox"
+        analysis: "Document certifié conforme par le service de vérification"
       });
     } catch (err) {
       console.error("Custom upload error:", err);
@@ -1960,7 +1960,7 @@ export default function CandidateDashboard({
                             className={`flex flex-col max-w-[85%] ${isUser ? "ml-auto items-end" : "mr-auto items-start"}`}
                           >
                             <span className="text-[9px] font-bold text-slate-400 mb-0.5 px-1">
-                              {isSystem ? "🤖 Système d'instruction" : isAdmin ? "👨‍💼 Agent d'Attribution" : "Vous"}
+                              {isSystem ? "🤖 Assistant Automatique" : isAdmin ? "👨‍💼 Agent d'Attribution" : "Vous"}
                             </span>
                             <div className={`p-2.5 rounded-xl text-xs leading-relaxed shadow-sm space-y-2 ${
                               isSystem 

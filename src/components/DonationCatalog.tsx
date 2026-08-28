@@ -1498,12 +1498,12 @@ export default function DonationCatalog({
                         className={`flex flex-col max-w-[85%] ${isUser ? "ml-auto items-end" : "mr-auto items-start"}`}
                       >
                         <span className="text-[9px] font-bold text-slate-400 mb-0.5 flex items-center gap-1">
-                          {isSystem ? "🤖 Système d'instruction" : isUser ? "Vous" : (msg.user_name || selectedDonationForAgent.agent_name || "Agent")}
+                          {isSystem ? "🤖 Assistant Automatique" : isUser ? "Vous" : (msg.user_name || selectedDonationForAgent.agent_name || "Agent")}
                           {isUser && (
                             <span className={`px-1.5 py-0.5 rounded-full text-[7px] uppercase tracking-tighter ${
                               currentUser ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
                             }`}>
-                              {currentUser ? "Connecté Supabase" : "Invité"}
+                              {currentUser ? "Membre connecté" : "Invité"}
                             </span>
                           )}
                         </span>
