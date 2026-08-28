@@ -821,64 +821,78 @@ export default function DonationCatalog({
                   )}
 
                   {/* Boutons d'actions principaux */}
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
-                    {(() => {
-                      const hasAlreadyApplied = currentUser && applications?.some(app => 
-                        app.donation_id === don.id && 
-                        (app.user_id === currentUser.id || app.user_email === currentUser.email)
-                      );
-
-                      if (hasAlreadyApplied) {
-                        return (
-                          <div
-                            className="col-span-2 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 animate-fadeIn"
-                          >
-                            <ShieldCheck className="h-4 w-4 text-emerald-600" />
-                            Dossier déjà soumis
-                          </div>
+                  <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
+                    <div className="grid grid-cols-2 gap-2">
+                      {(() => {
+                        const hasAlreadyApplied = currentUser && applications?.some(app => 
+                          app.donation_id === don.id && 
+                          (app.user_id === currentUser.id || app.user_email === currentUser.email)
                         );
-                      }
 
-                      return (
-                        <>
-                          <button
-                            onClick={() => {
-                              setSelectedDonationForDetails(don);
-                              onViewDonation?.(don.id);
-                            }}
-                            className="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition-all border border-slate-200/60 cursor-pointer flex items-center justify-center gap-1"
-                          >
-                            Voir fiche
-                          </button>
-                          <button
-                            onClick={() => setSelectedDonationForApplyDirect(don)}
-                            className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm hover:shadow cursor-pointer flex items-center justify-center gap-1"
-                          >
-                            Je postule
-                          </button>
-                        </>
-                      );
-                    })()}
-                    <button
-                      onClick={() => {
-                        setSelectedDonationForAgent(don);
-                        // Initialize chat history if not already present
-                        if (!agentChats[don.id]) {
-                          setAgentChats(prev => ({
-                            ...prev,
-                            [don.id]: [
-                              { sender: 'agent', content: `Bonjour ! Je suis l'agent d'attribution en charge du don : "${don.title}". Vous pouvez me poser toutes vos questions ici en direct.`, time: "Maintenant" }
-                            ]
-                          }));
+                        if (hasAlreadyApplied) {
+                          return (
+                            <div
+                              className="col-span-2 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 animate-fadeIn"
+                            >
+                              <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                              Dossier déjà soumis
+                            </div>
+                          );
                         }
-                      }}
-                      className="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition-all border border-slate-200/60 cursor-pointer flex items-center justify-center gap-1"
-                    >
-                      Discuter avec l'agent
-                    </button>
+
+                        return (
+                          <>
+                            <button
+                              onClick={() => {
+                                setSelectedDonationForDetails(don);
+                                onViewDonation?.(don.id);
+                              }}
+                              className="px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition-all border border-slate-200/60 cursor-pointer flex items-center justify-center gap-1"
+                            >
+                              Voir fiche
+                            </button>
+                            <button
+                              onClick={() => setSelectedDonationForApplyDirect(don)}
+                              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm hover:shadow cursor-pointer flex items-center justify-center gap-1"
+                            >
+                              Je postule
+                            </button>
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => {
+                          setSelectedDonationForAgent(don);
+                          if (!agentChats[don.id]) {
+                            setAgentChats(prev => ({
+                              ...prev,
+                              [don.id]: [
+                                { sender: 'agent', content: `Bonjour ! Je suis l'agent d'attribution en charge du don : "${don.title}". Vous pouvez me poser toutes vos questions ici en direct.`, time: "Maintenant" }
+                              ]
+                            }));
+                          }
+                        }}
+                        className="px-2.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-bold transition-all border border-slate-200/60 cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <MessageSquare className="h-3.5 w-3.5 text-indigo-600" />
+                        Chat Agent
+                      </button>
+
+                      <button
+                        onClick={() => handleStartCall(don)}
+                        className="px-2.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        <PhoneCall className="h-3.5 w-3.5" />
+                        Appeler
+                      </button>
+                    </div>
+
                     <button
                       onClick={() => setSelectedDonationForBids(don)}
-                      className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg text-xs font-bold transition-all border border-amber-200/50 cursor-pointer flex items-center justify-center gap-1"
+                      className="w-full px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg text-xs font-bold transition-all border border-amber-200/50 cursor-pointer flex items-center justify-center gap-1"
                     >
                       Priorité & Enchères
                     </button>
@@ -1384,13 +1398,27 @@ export default function DonationCatalog({
                 </div>
                 
                 <div className="flex items-center gap-2 ml-auto">
+                  {/* Bouton Appeler Agent Direct */}
+                  <button
+                    onClick={() => {
+                      const don = selectedDonationForAgent;
+                      setSelectedDonationForAgent(null);
+                      handleStartCall(don);
+                    }}
+                    className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-extrabold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-sm"
+                    title="Lancer un appel direct avec l'agent"
+                  >
+                    <PhoneCall className="h-3 w-3" />
+                    Appeler
+                  </button>
+
                   {/* Bouton WhatsApp Gateway */}
                   <button
                     onClick={() => {
                       const text = `Bonjour ! Je souhaite en savoir plus sur votre don : "${selectedDonationForAgent.title}" (Réf: #${selectedDonationForAgent.id}). Pouvez-vous m'accompagner ?`;
                       window.open(`https://wa.me/33600000000?text=${encodeURIComponent(text)}`, "_blank");
                     }}
-                    className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black px-2.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-sm"
+                    className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition-all cursor-pointer shadow-sm border border-slate-700"
                     title="Contacter via WhatsApp"
                   >
                     WhatsApp
@@ -1398,7 +1426,7 @@ export default function DonationCatalog({
                   
                   <button 
                     onClick={() => setSelectedDonationForAgent(null)}
-                    className="text-slate-400 hover:text-white p-1 rounded-full cursor-pointer"
+                    className="text-slate-400 hover:text-white p-1 rounded-full cursor-pointer ml-1"
                   >
                     <X className="h-4 w-4" />
                   </button>
