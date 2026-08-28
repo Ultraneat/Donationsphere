@@ -321,7 +321,7 @@ export default function ContactPage({ currentUser }: ContactPageProps) {
 
                   return (
                     <div 
-                      key={msg.id || `msg-${idx}`} 
+                      key={`contact-msg-${msg.id || idx}-${idx}`} 
                       className={`flex flex-col max-w-[85%] ${isUser ? "ml-auto items-end" : "mr-auto items-start"}`}
                     >
                       <span className="text-[8px] font-black text-slate-400 mb-0.5 uppercase tracking-wider px-1">

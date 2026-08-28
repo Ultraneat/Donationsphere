@@ -265,11 +265,14 @@ export default function DonationCatalog({
     
     // Rejoindre la room spécifique à l'utilisateur pour la confidentialité
     joinConversation(effectiveUserId);
+    if (guestId && guestId !== effectiveUserId) {
+      joinConversation(guestId);
+    }
     
     const encodedName = encodeURIComponent(currentUser?.name || currentUser?.email || "");
 
     const fetchUnifiedMessages = () => {
-      fetch(`/api/all-user-messages?user_id=${effectiveUserId}&user_name=${encodedName}`)
+      fetch(`/api/all-user-messages?user_id=${effectiveUserId}&guest_id=${guestId}&user_name=${encodedName}`)
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) {
@@ -281,7 +284,7 @@ export default function DonationCatalog({
 
     // Charger l'historique filtré par user_id et user_name (pour support hérité)
     const fetchLegacyChats = () => {
-      fetch(`/api/agent-conversations?user_id=${effectiveUserId}&user_name=${encodedName}`)
+      fetch(`/api/agent-conversations?user_id=${effectiveUserId}&guest_id=${guestId}&user_name=${encodedName}`)
         .then(res => res.json())
         .then(data => setAgentChats(data))
         .catch(err => console.error("Erreur chargement chats hérités:", err));
@@ -297,10 +300,15 @@ export default function DonationCatalog({
     }, 4000);
 
     const handleMessageReceived = (payload: any) => {
-      // Sécurité supplémentaire côté client : ignorer les messages qui ne nous sont pas destinés
-      if (payload.user_id && payload.user_id !== effectiveUserId && !currentUser?.role?.includes('admin')) {
-        return;
-      }
+      // Sécurité supplémentaire côté client : valider que le message est destiné à la session actuelle
+      const isForUser = !payload.user_id || 
+        payload.user_id === effectiveUserId || 
+        payload.user_id === guestId || 
+        (currentUser?.id && payload.user_id === currentUser.id) ||
+        (currentUser?.name && payload.user_name === currentUser.name) ||
+        currentUser?.role?.includes('admin');
+
+      if (!isForUser) return;
 
       // 1. Mettre à jour les messages unifiés
       setUnifiedMessages(prev => {
@@ -311,19 +319,21 @@ export default function DonationCatalog({
       });
 
       // 2. Mettre à jour les chats hérités (par donation_id)
-      setAgentChats(prev => {
-        const list = prev[payload.donation_id] || [];
-        if (list.some((m: any) => m.id === payload.id || (m.content === payload.content && m.created_at === payload.created_at && m.sender === payload.sender))) {
-          return prev;
-        }
-        return {
-          ...prev,
-          [payload.donation_id]: [...list, {
-            ...payload,
-            time: new Date(payload.created_at || Date.now()).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
-          }]
-        };
-      });
+      if (payload.donation_id) {
+        setAgentChats(prev => {
+          const list = prev[payload.donation_id] || [];
+          if (list.some((m: any) => m.id === payload.id || (m.content === payload.content && m.created_at === payload.created_at && m.sender === payload.sender))) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [payload.donation_id]: [...list, {
+              ...payload,
+              time: new Date(payload.created_at || Date.now()).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+            }]
+          };
+        });
+      }
     };
 
     socket.on("message:received", handleMessageReceived);
@@ -373,7 +383,7 @@ export default function DonationCatalog({
   };
 
   // Filter and sort donations dynamically
-  const uniqueLocations = ["Toutes", ...Array.from(new Set(donations.map(d => d.location).filter(Boolean).map(l => l!.trim()))).sort()];
+  const uniqueLocations = ["Toutes", ...Array.from(new Set(donations.map(d => d.location?.trim()).filter(Boolean))).sort()];
 
   const filteredDonations = donations.filter(don => {
     const matchesCategory = selectedCategory === "Tous" || don.category === selectedCategory;
@@ -1472,7 +1482,13 @@ export default function DonationCatalog({
               {/* Chat Messages Panel */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50" id="live-chat-panel" onScroll={handleChatScroll}>
                 {(() => {
-                  const filteredMessages = unifiedMessages.filter((m: any) => m.donation_id === selectedDonationForAgent.id);
+                  const selDonId = String(selectedDonationForAgent.id || "");
+                  const filteredMessages = unifiedMessages.filter((m: any) => {
+                    const mDonId = m.donation_id ? String(m.donation_id) : "";
+                    if (mDonId && mDonId === selDonId) return true;
+                    if (m.application_id && applications.some(a => String(a.id) === String(m.application_id) && String(a.donation_id) === selDonId)) return true;
+                    return false;
+                  });
                   const msgs = filteredMessages.length > 0 
                     ? filteredMessages 
                     : [

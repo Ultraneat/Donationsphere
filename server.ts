@@ -1527,10 +1527,10 @@ app.post("/api/submissions", async (req, res) => {
 // FONCTIONS DE SYNCHRONISATION DU CHAT (VITRINE <-> TABLEAU DE BORD)
 // =====================================================================
 async function syncAgentConversationToApplication(donationId: string, userId: string | null, message: any, io: any) {
-  if (!userId) return;
+  if (!donationId) return;
   
   let application = null;
-  if (isSupabaseConnected && uuidRegex.test(donationId) && uuidRegex.test(userId)) {
+  if (isSupabaseConnected && uuidRegex.test(donationId) && userId && uuidRegex.test(userId)) {
     try {
       const { data } = await supabase
         .from("applications")
@@ -1547,7 +1547,12 @@ async function syncAgentConversationToApplication(donationId: string, userId: st
   }
   
   if (!application) {
-    application = (localDb.applications || []).find(a => a.donation_id === donationId && a.user_id === userId);
+    application = (localDb.applications || []).find(a => 
+      String(a.donation_id) === String(donationId) && (
+        (userId && a.user_id === userId) ||
+        (message.user_name && a.user_name === message.user_name)
+      )
+    );
   }
   
   if (application) {
@@ -1588,7 +1593,13 @@ async function syncAgentConversationToApplication(donationId: string, userId: st
           user_name: application.user_name
         };
         io.to(`user:${application.user_id}`).emit("application_message:received", hydratedAppMsg);
+        io.to(`user:${application.user_id}`).emit("message:received", hydratedAppMsg);
+        if (userId && userId !== application.user_id) {
+          io.to(`user:${userId}`).emit("application_message:received", hydratedAppMsg);
+          io.to(`user:${userId}`).emit("message:received", hydratedAppMsg);
+        }
         io.to("room:admins").emit("application_message:received", hydratedAppMsg);
+        io.to("room:admins").emit("message:received", hydratedAppMsg);
       }
     }
   }
@@ -2567,17 +2578,92 @@ app.post("/api/calls", async (req, res) => {
 });
 
 app.post("/api/ai/chat", async (req, res) => {
-  const { message, history, user, donationTitle } = req.body;
-  if (!message) {
+  const { message, history, user, donationTitle, user_id, guest_id, donation_id, attachment } = req.body;
+  if (!message && !attachment) {
     return res.status(400).json({ error: "Le message est requis." });
   }
 
-  const normalizedInput = message.toLowerCase().trim();
+  const normalizedInput = (message || "").toLowerCase().trim();
   const isUserLoggedIn = Boolean(user && (user.email || user.name));
-  const userName = isUserLoggedIn ? (user.name || user.email.split('@')[0]) : "Anonyme";
+  const userName = isUserLoggedIn ? (user.name || user.email.split('@')[0]) : (req.body.user_name || "Visiteur");
   const userRole = isUserLoggedIn ? (user.role === 'admin' ? 'Administrateur' : 'Demandeur Connecté') : 'Visiteur Anonyme';
+  const effectiveUserId = user_id || guest_id || (user && user.id) || null;
+  const donId = donation_id || "general";
+  const io = req.app.get("io");
 
-  // 1. MÉTHODE HYBRIDE : Vérification prioritaire dans la base de connaissances locale (chatbot_training)
+  // 1. Enregistrer et diffuser le message de l'utilisateur
+  const userMsgRecord: any = {
+    donation_id: donId,
+    sender: "user",
+    user_name: userName,
+    user_id: effectiveUserId,
+    content: message || "Pièce jointe envoyée",
+    attachment: attachment || null,
+    created_at: new Date().toISOString()
+  };
+
+  let savedUserMsg = userMsgRecord;
+  if (isSupabaseConnected) {
+    try {
+      const { data, error } = await supabase.from("agent_conversations").insert([userMsgRecord]).select();
+      if (!error && data && data[0]) {
+        savedUserMsg = data[0];
+      }
+    } catch (e) {}
+  } else {
+    if (!localDb.agent_conversations) localDb.agent_conversations = {};
+    if (!localDb.agent_conversations[donId]) localDb.agent_conversations[donId] = [];
+    savedUserMsg = { ...userMsgRecord, id: "msg_usr_" + Math.random().toString(36).substr(2, 9) };
+    localDb.agent_conversations[donId].push(savedUserMsg);
+    saveLocalDb();
+  }
+
+  if (io) {
+    io.to("room:admins").emit("message:received", savedUserMsg);
+    if (effectiveUserId) io.to(`user:${effectiveUserId}`).emit("message:received", savedUserMsg);
+    if (guest_id && guest_id !== effectiveUserId) io.to(`user:${guest_id}`).emit("message:received", savedUserMsg);
+  }
+  syncAgentConversationToApplication(donId, effectiveUserId, savedUserMsg, io);
+
+  // Helper pour traiter et diffuser la réponse bot
+  const respondWithBot = async (responseText: string, source: string) => {
+    const aiMsgRecord: any = {
+      donation_id: donId,
+      sender: "agent",
+      user_name: "Conseiller Solidaire",
+      user_id: effectiveUserId,
+      content: responseText,
+      attachment: null,
+      created_at: new Date().toISOString()
+    };
+
+    let savedAiMsg = aiMsgRecord;
+    if (isSupabaseConnected) {
+      try {
+        const { data, error } = await supabase.from("agent_conversations").insert([aiMsgRecord]).select();
+        if (!error && data && data[0]) {
+          savedAiMsg = data[0];
+        }
+      } catch (e) {}
+    } else {
+      if (!localDb.agent_conversations) localDb.agent_conversations = {};
+      if (!localDb.agent_conversations[donId]) localDb.agent_conversations[donId] = [];
+      savedAiMsg = { ...aiMsgRecord, id: "msg_ai_" + Math.random().toString(36).substr(2, 9) };
+      localDb.agent_conversations[donId].push(savedAiMsg);
+      saveLocalDb();
+    }
+
+    if (io) {
+      io.to("room:admins").emit("message:received", savedAiMsg);
+      if (effectiveUserId) io.to(`user:${effectiveUserId}`).emit("message:received", savedAiMsg);
+      if (guest_id && guest_id !== effectiveUserId) io.to(`user:${guest_id}`).emit("message:received", savedAiMsg);
+    }
+    syncAgentConversationToApplication(donId, effectiveUserId, savedAiMsg, io);
+
+    return res.json({ response: responseText, source, userMessage: savedUserMsg, botMessage: savedAiMsg });
+  };
+
+  // 2. MÉTHODE HYBRIDE : Vérification prioritaire dans la base de connaissances locale (chatbot_training)
   try {
     let trainingRules: any[] = [];
     if (isSupabaseConnected) {
@@ -2609,7 +2695,7 @@ app.post("/api/ai/chat", async (req, res) => {
               adaptedResponse = adaptedResponse.replace(/\[USER_NAME\]/g, "Visiteur");
             }
           }
-          return res.json({ response: adaptedResponse, source: "local", user_recognized: isUserLoggedIn });
+          return await respondWithBot(adaptedResponse, "local");
         }
       }
     }
@@ -2617,7 +2703,7 @@ app.post("/api/ai/chat", async (req, res) => {
     console.error("[CHAT HYBRIDE] Erreur vérification locale :", err);
   }
 
-  // 2. Si aucune règle locale ne correspond, faire appel au moteur d'IA en arrière-plan
+  // 3. Si aucune règle locale ne correspond, faire appel au moteur d'IA en arrière-plan
   try {
     let donations = [];
     if (isSupabaseConnected) {
@@ -2672,7 +2758,6 @@ Directives conversationnelles :
 
     const contents = [];
     if (Array.isArray(history)) {
-      // Formater l'historique pour le SDK @google/genai
       for (const turn of history) {
         if (turn.role === "user" || turn.role === "model") {
           contents.push({
@@ -2682,13 +2767,12 @@ Directives conversationnelles :
         }
       }
     }
-    // Ajouter le message actuel
     contents.push({
       role: "user",
-      parts: [{ text: message }]
+      parts: [{ text: message || "Besoin d'aide" }]
     });
 
-    console.log(`[AI] Appel Gemini pour le message: "${message.substring(0, 60)}..."`);
+    console.log(`[AI] Appel Gemini pour le message: "${(message || "").substring(0, 60)}..."`);
     const response = await callGeminiWithFallback({
       contents: contents,
       config: {
@@ -2698,14 +2782,11 @@ Directives conversationnelles :
     });
 
     const aiResponseText = response.text || "Je n'ai pas pu analyser votre demande, veuillez la reformuler.";
-    res.json({ response: aiResponseText, source: "ai" });
+    return await respondWithBot(aiResponseText, "ai");
   } catch (error: any) {
     console.error("[AI] Erreur Gemini Chat:", error);
-    // Fallback ultime en cas de quota dépassé ou erreur réseau
-    res.json({ 
-      response: "Je suis votre Conseiller Solidaire. Pour postuler à un don ou connaître les critères d'éligibilité, vous pouvez consulter la fiche de chaque don dans notre catalogue ou remplir un formulaire de candidature. Toutes nos attributions sont 100% gratuites.",
-      source: "fallback"
-    });
+    const fallbackText = "Je suis votre Conseiller Solidaire. Pour postuler à un don ou connaître les critères d'éligibilité, vous pouvez consulter la fiche de chaque don dans notre catalogue ou remplir un formulaire de candidature. Toutes nos attributions sont 100% gratuites.";
+    return await respondWithBot(fallbackText, "fallback");
   }
 });
 
@@ -3696,40 +3777,34 @@ app.get("/api/admin/stats", async (req, res) => {
 app.get("/api/all-user-messages", async (req, res) => {
   const userName = req.query.user_name as string;
   const userId = req.query.user_id as string;
+  const guestId = req.query.guest_id as string;
   
-  if (!userName && !userId) return res.json([]);
+  if (!userName && !userId && !guestId) return res.json([]);
 
   let allMessages: any[] = [];
   
+  const validUserIds = [userId, guestId].filter(id => id && id !== "visitor" && id !== "null" && id !== "undefined");
+  const validUserName = (userName && userName !== "Visiteur" && userName !== "Candidat Anonyme" && userName !== "Candidat") ? userName : null;
+
   // 1. Chercher dans les conversations en direct
   if (isSupabaseConnected) {
     try {
-      let query;
-      if (userId && userId !== "visitor" && userId !== "null" && userId !== "undefined") {
-        if (userName && userName !== "Visiteur" && userName !== "Candidat Anonyme" && userName !== "Candidat") {
-          query = supabase.from("agent_conversations").select("*").or(`user_id.eq."${userId}",user_name.eq."${userName}"`);
-        } else {
-          query = supabase.from("agent_conversations").select("*").eq("user_id", userId);
-        }
-      } else if (userName && userName !== "Visiteur" && userName !== "Candidat Anonyme" && userName !== "Candidat") {
-        query = supabase.from("agent_conversations").select("*").eq("user_name", userName);
-      } else {
-        return res.json([]); // Pas de recherche pour les noms par défaut
-      }
-
-      const { data: directMsgs, error } = await query;
+      let query = supabase.from("agent_conversations").select("*");
+      const filters: string[] = [];
       
-      if (!error && directMsgs) {
-        const filteredDirect = directMsgs.filter((m: any) => {
-          if (userId && userId !== "visitor" && userId !== "null" && userId !== "undefined" && m.user_id === userId) {
-            return true;
-          }
-          if (!m.user_id && userName && userName !== "Visiteur" && userName !== "Candidat Anonyme" && userName !== "Candidat" && m.user_name === userName) {
-            return true;
-          }
-          return false;
-        });
-        allMessages.push(...filteredDirect);
+      validUserIds.forEach(id => {
+        filters.push(`user_id.eq."${id}"`);
+      });
+      if (validUserName) {
+        filters.push(`user_name.eq."${validUserName}"`);
+      }
+      
+      if (filters.length > 0) {
+        query = query.or(filters.join(","));
+        const { data: directMsgs, error } = await query;
+        if (!error && directMsgs) {
+          allMessages.push(...directMsgs);
+        }
       }
     } catch (e) {
       console.error("Erreur Supabase all-user-messages (direct):", e);
@@ -3739,19 +3814,10 @@ app.get("/api/all-user-messages", async (req, res) => {
   if (localDb.agent_conversations) {
     Object.entries(localDb.agent_conversations).forEach(([donId, msgs]: [string, any]) => {
       const userMsgs = msgs.filter((m: any) => {
-        if (userId && userId !== "visitor" && userId !== "null" && userId !== "undefined") {
-          if (m.user_id === userId) return true;
-          if (!m.user_id && userName && userName !== "Visiteur" && userName !== "Candidat Anonyme" && userName !== "Candidat" && m.user_name === userName) {
-            return true;
-          }
-          return false;
-        }
-        if (userName && userName !== "Visiteur" && userName !== "Candidat Anonyme" && userName !== "Candidat" && m.user_name === userName) {
-          return true;
-        }
+        if (validUserIds.includes(m.user_id)) return true;
+        if (validUserName && m.user_name === validUserName) return true;
         return false;
       });
-      // Éviter d'ajouter des doublons si déjà récupérés de Supabase
       userMsgs.forEach((m: any) => {
         if (!allMessages.some(am => am.id === m.id)) {
           allMessages.push(m);
@@ -3762,22 +3828,22 @@ app.get("/api/all-user-messages", async (req, res) => {
 
   // 2. Chercher dans les messages de candidatures
   let userAppIds: string[] = [];
+  let userAppsMap: Record<string, string> = {}; // appId -> donationId
   
   if (isSupabaseConnected) {
     try {
-      let query;
-      if (userId && userId !== "visitor" && userId !== "null" && userId !== "undefined") {
-        query = supabase.from("applications").select("id, donation_id").eq("user_id", userId);
-      } else if (userName && userName !== "Visiteur" && userName !== "Candidat Anonyme") {
-        query = supabase.from("applications").select("id, donation_id").eq("user_name", userName);
-      } else {
-        query = null;
-      }
+      let query = supabase.from("applications").select("id, donation_id, user_id, user_name");
+      const filters: string[] = [];
+      validUserIds.forEach(id => filters.push(`user_id.eq."${id}"`));
+      if (validUserName) filters.push(`user_name.eq."${validUserName}"`);
       
-      if (query) {
-        const { data: userApps, error: appErr } = await query;
+      if (filters.length > 0) {
+        const { data: userApps, error: appErr } = await query.or(filters.join(","));
         if (!appErr && userApps) {
-          userAppIds = userApps.map(a => a.id);
+          userApps.forEach((a: any) => {
+            userAppIds.push(a.id);
+            userAppsMap[a.id] = a.donation_id;
+          });
           
           if (userAppIds.length > 0) {
             const { data: appMsgs, error: msgErr } = await supabase
@@ -3786,13 +3852,10 @@ app.get("/api/all-user-messages", async (req, res) => {
               .in("application_id", userAppIds);
               
             if (!msgErr && appMsgs) {
-              const mappedAppMsgs = appMsgs.map((m: any) => {
-                const app = userApps.find((a: any) => a.id === m.application_id);
-                return {
-                  ...m,
-                  donation_id: app ? app.donation_id : null
-                };
-              });
+              const mappedAppMsgs = appMsgs.map((m: any) => ({
+                ...m,
+                donation_id: m.donation_id || userAppsMap[m.application_id] || null
+              }));
               mappedAppMsgs.forEach((m: any) => {
                 if (!allMessages.some(am => am.id === m.id)) {
                   allMessages.push(m);
@@ -3808,28 +3871,25 @@ app.get("/api/all-user-messages", async (req, res) => {
   }
 
   const userAppsLocal = (localDb.applications || []).filter(app => {
-    if (userId && userId !== "visitor" && userId !== "null" && userId !== "undefined") {
-      return app.user_id === userId;
-    }
-    if (userName && userName !== "Visiteur" && userName !== "Candidat Anonyme") {
-      return app.user_name === userName;
-    }
+    if (validUserIds.includes(app.user_id)) return true;
+    if (validUserName && app.user_name === validUserName) return true;
     return false;
   });
+  
   userAppsLocal.forEach(app => {
     if (!userAppIds.includes(app.id)) {
       userAppIds.push(app.id);
     }
+    userAppsMap[app.id] = app.donation_id;
   });
   
   if (userAppIds.length > 0) {
     const appMsgsLocal = (localDb.application_messages || []).filter(m => userAppIds.includes(m.application_id));
     appMsgsLocal.forEach(m => {
       if (!allMessages.some(am => am.id === m.id)) {
-        const app = userAppsLocal.find(a => a.id === m.application_id);
         allMessages.push({
           ...m,
-          donation_id: app ? app.donation_id : null
+          donation_id: m.donation_id || userAppsMap[m.application_id] || null
         });
       }
     });
@@ -3839,7 +3899,7 @@ app.get("/api/all-user-messages", async (req, res) => {
   allMessages.sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
 
   // Éviter les doublons finaux par ID ou contenu+date
-  const uniqueMessages = Array.from(new Map(allMessages.map(m => [m.id || (m.content + m.created_at), m])).values());
+  const uniqueMessages = Array.from(new Map(allMessages.map(m => [m.id || (m.content + (m.created_at || "")), m])).values());
 
   res.json(uniqueMessages);
 });

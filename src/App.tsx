@@ -768,7 +768,7 @@ export default function App() {
 
   // ACTION : Envoyer un message dans le chat candidat
   const handleSendMessage = async (content: string, attachment?: any) => {
-    if (!activeApplicationId) return;
+    if (!activeApplicationId) return null;
 
     try {
       const res = await fetch("/api/messages", {
@@ -809,8 +809,10 @@ export default function App() {
           }));
         }, 1500);
       }
+      return newMsg;
     } catch (e) {
       console.error("Échec d'envoi du message", e);
+      return null;
     }
   };
 

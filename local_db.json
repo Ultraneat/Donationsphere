@@ -141,6 +141,50 @@
   "chat_threads_metadata": {},
   "call_logs": [
     {
+      "id": "call-1787943216479-nna3",
+      "donation_id": "4903f41d-a71f-4f41-9f46-42a00c84c4ca",
+      "donation_title": "Don de maison entièrement meublée (France) pour hébergement d’urgence et de transition",
+      "user_name": "Admin Principal",
+      "user_email": "asthedio@gmail.com",
+      "type": "Appel WhatsApp Agent",
+      "duration": "WhatsApp",
+      "status": "Terminé",
+      "created_at": "2026-08-28T18:53:36.479Z"
+    },
+    {
+      "id": "call-1787942575586-dor2",
+      "donation_id": "7bab004a-fe1e-4be1-a58b-5545f09e452d",
+      "donation_title": "Pack « Mobilité Durable » : 100 000 € + 2 voitures électriques Tesla Model Y",
+      "user_name": "Admin Principal",
+      "user_email": "asthedio@gmail.com",
+      "type": "Appel WhatsApp Agent",
+      "duration": "WhatsApp",
+      "status": "Terminé",
+      "created_at": "2026-08-28T18:42:55.586Z"
+    },
+    {
+      "id": "call-1787942053443-32zx",
+      "donation_id": "7bab004a-fe1e-4be1-a58b-5545f09e452d",
+      "donation_title": "Pack « Mobilité Durable » : 100 000 € + 2 voitures électriques Tesla Model Y",
+      "user_name": "Admin Principal",
+      "user_email": "asthedio@gmail.com",
+      "type": "Appel WhatsApp Agent",
+      "duration": "WhatsApp",
+      "status": "Terminé",
+      "created_at": "2026-08-28T18:34:13.443Z"
+    },
+    {
+      "id": "call-1787941310238-fy3d",
+      "donation_id": "7bab004a-fe1e-4be1-a58b-5545f09e452d",
+      "donation_title": "Pack « Mobilité Durable » : 100 000 € + 2 voitures électriques Tesla Model Y",
+      "user_name": "Admin Principal",
+      "user_email": "asthedio@gmail.com",
+      "type": "Appel Direct Agent",
+      "duration": "01:25",
+      "status": "Terminé",
+      "created_at": "2026-08-28T18:21:50.238Z"
+    },
+    {
       "id": "call-101",
       "donation_id": "don-1",
       "donation_title": "Pavillon Résidentiel 120m² - Lyon",

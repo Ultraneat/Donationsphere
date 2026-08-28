@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Sparkles, X, Send, Bot, User, HelpCircle, ArrowRight, Paperclip, Mic, Square, Volume2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { getSocket, joinConversation } from "../lib/socket";
 
 interface Message {
   id: string;
@@ -18,19 +19,99 @@ export default function AiAssistantWidget({ currentUser }: AiAssistantWidgetProp
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
 
+  const [guestId] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    let id = localStorage.getItem("chat_guest_id");
+    if (!id) {
+      id = "guest_" + Math.random().toString(36).substring(2, 9);
+      localStorage.setItem("chat_guest_id", id);
+    }
+    return id;
+  });
+
+  const effectiveUserId = currentUser?.id || guestId;
+
+  // Initialisation et synchronisation unifiée des messages (Temps Réel + Historique)
   useEffect(() => {
     const userName = currentUser ? (currentUser.name || currentUser.email) : "";
-    setMessages([
-      {
-        id: "welcome",
-        sender: "ai",
-        content: currentUser
-          ? `Bonjour ${userName} (${currentUser.role === 'admin' ? 'Administrateur' : 'Candidat Connecté'}) ! Je suis votre Conseiller Solidaire. Je suis à votre service pour vous orienter sur vos dossiers et notre catalogue. Comment puis-je vous guider ?`
-          : "Bonjour ! Je suis votre Conseiller Solidaire. Je connais parfaitement tout notre catalogue de dons (véhicules, immobilier, matériel professionnel, fonds d'aide). Comment puis-je vous guider aujourd'hui ?",
-        created_at: new Date().toISOString()
+    const defaultWelcome: Message = {
+      id: "welcome",
+      sender: "ai",
+      content: currentUser
+        ? `Bonjour ${userName} (${currentUser.role === 'admin' ? 'Administrateur' : 'Candidat Connecté'}) ! Je suis votre Conseiller Solidaire. Je suis à votre service pour vous orienter sur vos dossiers et notre catalogue. Comment puis-je vous guider ?`
+        : "Bonjour ! Je suis votre Conseiller Solidaire. Je connais parfaitement tout notre catalogue de dons (véhicules, immobilier, matériel professionnel, fonds d'aide). Comment puis-je vous guider aujourd'hui ?",
+      created_at: new Date().toISOString()
+    };
+
+    const socket = getSocket();
+    if (effectiveUserId) joinConversation(effectiveUserId);
+    if (guestId && guestId !== effectiveUserId) joinConversation(guestId);
+
+    const encodedName = encodeURIComponent(currentUser?.name || currentUser?.email || "");
+
+    const fetchHistory = () => {
+      if (!effectiveUserId && !guestId && !encodedName) return;
+      fetch(`/api/all-user-messages?user_id=${effectiveUserId}&guest_id=${guestId}&user_name=${encodedName}`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data) && data.length > 0) {
+            const formatted = data.map((m: any) => ({
+              id: m.id || Math.random().toString(),
+              sender: (m.sender === "user" ? "user" : "ai") as "user" | "ai",
+              content: m.content,
+              attachment: m.attachment,
+              created_at: m.created_at || new Date().toISOString()
+            }));
+            setMessages(formatted);
+          } else {
+            setMessages([defaultWelcome]);
+          }
+        })
+        .catch(err => console.error("Erreur widget fetch messages:", err));
+    };
+
+    fetchHistory();
+    const interval = setInterval(fetchHistory, 4000);
+
+    const handleMessageReceived = (payload: any) => {
+      const isForUser = !payload.user_id ||
+        payload.user_id === effectiveUserId ||
+        payload.user_id === guestId ||
+        (currentUser?.id && payload.user_id === currentUser.id) ||
+        (currentUser?.name && payload.user_name === currentUser.name) ||
+        currentUser?.role?.includes('admin');
+
+      if (!isForUser) return;
+
+      const newMsgItem: Message = {
+        id: payload.id || Math.random().toString(),
+        sender: payload.sender === "user" ? "user" : "ai",
+        content: payload.content,
+        attachment: payload.attachment,
+        created_at: payload.created_at || new Date().toISOString()
+      };
+
+      setMessages(prev => {
+        if (prev.some(m => m.id === newMsgItem.id || (m.content === newMsgItem.content && m.created_at === newMsgItem.created_at && m.sender === newMsgItem.sender))) {
+          return prev;
+        }
+        return [...prev, newMsgItem];
+      });
+
+      if (payload.sender !== "user") {
+        setHasNewMessage(true);
       }
-    ]);
-  }, [currentUser]);
+    };
+
+    socket.on("message:received", handleMessageReceived);
+    socket.on("application_message:received", handleMessageReceived);
+
+    return () => {
+      clearInterval(interval);
+      socket.off("message:received", handleMessageReceived);
+      socket.off("application_message:received", handleMessageReceived);
+    };
+  }, [currentUser, effectiveUserId, guestId]);
   const [input, setInput] = useState("");
   const [attachment, setAttachment] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -132,11 +213,14 @@ export default function AiAssistantWidget({ currentUser }: AiAssistantWidgetProp
   const handleSendMessage = async (textToSend: string) => {
     if ((!textToSend.trim() && !attachment) || isLoading) return;
 
+    const currentText = textToSend.trim();
+    const currentAttachment = attachment;
+
     const userMsg: Message = {
       id: `user-${Date.now()}`,
       sender: "user",
-      content: textToSend.trim(),
-      attachment: attachment,
+      content: currentText,
+      attachment: currentAttachment,
       created_at: new Date().toISOString()
     };
 
@@ -155,27 +239,38 @@ export default function AiAssistantWidget({ currentUser }: AiAssistantWidgetProp
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-          message: textToSend.trim() || "Consulter le catalogue", 
+          message: currentText || "Consulter le catalogue", 
           history,
+          user_id: effectiveUserId,
+          guest_id: guestId,
+          donation_id: "general",
+          user_name: currentUser ? (currentUser.name || currentUser.email) : "Visiteur",
           user: currentUser ? {
+            id: currentUser.id,
             name: currentUser.name || currentUser.email,
             email: currentUser.email,
             role: currentUser.role || "Demandeur"
-          } : null
+          } : null,
+          attachment: currentAttachment
         })
       });
 
       if (res.ok) {
         const data = await res.json();
-        const aiMsg: Message = {
-          id: `ai-${Date.now()}`,
-          sender: "ai",
-          content: data.response,
-          created_at: new Date().toISOString()
-        };
-        setMessages(prev => [...prev, aiMsg]);
-        if (!isOpen) {
-          setHasNewMessage(true);
+        if (data.response) {
+          const aiMsg: Message = {
+            id: data.botMessage?.id || `ai-${Date.now()}`,
+            sender: "ai",
+            content: data.response,
+            created_at: new Date().toISOString()
+          };
+          setMessages(prev => {
+            if (prev.some(m => m.id === aiMsg.id)) return prev;
+            return [...prev, aiMsg];
+          });
+          if (!isOpen) {
+            setHasNewMessage(true);
+          }
         }
       } else {
         throw new Error("Erreur serveur");

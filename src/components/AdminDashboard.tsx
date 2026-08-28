@@ -1377,11 +1377,16 @@ const handleHeroUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     
     setIsSendingVisitorReply(true);
 
+    const userMsgs = activeVisitorUserId ? (visitorChatsByUser[activeVisitorUserId] || []) : [];
+    const firstMsgWithUserId = userMsgs.find(m => m.user_id && m.user_id !== "null" && m.user_id !== "undefined");
+    const targetUserId = firstMsgWithUserId?.user_id || null;
+
     const payload = {
       donation_id: donationId,
       sender: 'agent' as const,
       content: content,
       user_name: "Administrateur",
+      user_id: targetUserId,
       is_auth: true,
       attachment: visitorReplyFile,
       created_at: new Date().toISOString()

@@ -49,7 +49,7 @@ interface CandidateDashboardProps {
   donationTitle: string;
   donationCategory?: string;
   messages: ApplicationMessage[];
-  onSendMessage: (content: string, attachment?: any) => void;
+  onSendMessage: (content: string, attachment?: any) => Promise<any>;
   onSubmitStep: (stepIndex: number, formData: any) => void;
   workflowSteps: WorkflowStep[];
   submissions: any[];
@@ -164,13 +164,21 @@ export default function CandidateDashboard({
     }
 
     const socket = getSocket();
+    const guestId = typeof window !== 'undefined' ? localStorage.getItem("chat_guest_id") : null;
     
-    // Rejoindre la room spécifique à l'utilisateur
-    joinConversation(currentUser.id);
+    // Rejoindre la room spécifique à l'utilisateur et au guest
+    if (currentUser?.id) joinConversation(currentUser.id);
+    if (guestId) joinConversation(guestId);
 
     const handleMessageReceived = (payload: any) => {
       // Synchronisation globale de allUserMessages
-      if (payload.user_id === currentUser?.id || payload.user_name === currentUser?.name || (application && payload.application_id === application.id)) {
+      const isForUser = (currentUser?.id && payload.user_id === currentUser.id) ||
+        (guestId && payload.user_id === guestId) ||
+        (currentUser?.name && payload.user_name === currentUser.name) ||
+        (application && payload.application_id === application.id) ||
+        (application && String(payload.donation_id) === String(application.donation_id));
+
+      if (isForUser) {
         setAllUserMessages(prev => {
           if (prev.some(m => m.id === payload.id || (m.content === payload.content && m.created_at === payload.created_at))) {
             return prev;
@@ -199,7 +207,7 @@ export default function CandidateDashboard({
         });
       }
 
-      if (payload.donation_id === generalChatDonationId) {
+      if (payload.donation_id && String(payload.donation_id) === String(generalChatDonationId)) {
         setGeneralChatMessages(prev => {
           if (prev.some(m => m.id === payload.id)) return prev;
           return [...prev, payload];
@@ -467,11 +475,16 @@ export default function CandidateDashboard({
 
   // Charger TOUS les messages de l'utilisateur (synchronisation globale)
   useEffect(() => {
-    if (currentUser && activeSubTab === "chat") {
-      const fetchAllMessages = () => {
-        fetch(`/api/all-user-messages?user_id=${currentUser.id || ""}&user_name=${currentUser.name || currentUser.email || ""}`)
-          .then(res => res.json())
-          .then(data => {
+    const guestId = typeof window !== 'undefined' ? localStorage.getItem("chat_guest_id") : "";
+    const fetchAllMessages = () => {
+      const uId = currentUser?.id || "";
+      const uName = currentUser?.name ? encodeURIComponent(currentUser.name) : currentUser?.email ? encodeURIComponent(currentUser.email) : "";
+      if (!uId && !guestId && !uName) return;
+
+      fetch(`/api/all-user-messages?user_id=${uId}&guest_id=${guestId || ""}&user_name=${uName}`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
             setAllUserMessages(data);
             
             // Notification sonore si nouveau message de l'agent
@@ -484,14 +497,15 @@ export default function CandidateDashboard({
               }
             }
             setLastMessageCount(data.length);
-          });
-      };
+          }
+        })
+        .catch(err => console.error("Erreur sync all-user-messages:", err));
+    };
 
-      fetchAllMessages();
-      const interval = setInterval(fetchAllMessages, 4000); // Rafraîchissement fréquent
-      return () => clearInterval(interval);
-    }
-  }, [currentUser, activeSubTab, lastMessageCount]);
+    fetchAllMessages();
+    const interval = setInterval(fetchAllMessages, 4000); // Rafraîchissement fréquent
+    return () => clearInterval(interval);
+  }, [currentUser, lastMessageCount]);
 
   // Initialiser l'audio pour les notifications
   useEffect(() => {
@@ -832,11 +846,19 @@ export default function CandidateDashboard({
       };
 
       try {
-        await fetch(`/api/agent-conversations/${generalChatDonationId}`, {
+        const res = await fetch(`/api/agent-conversations/${generalChatDonationId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
+        if (res.ok) {
+          const savedMsg = await res.json();
+          setAllUserMessages(prev => {
+            if (prev.some(m => m.id === savedMsg.id)) return prev;
+            return [...prev, savedMsg].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+          });
+          setGeneralChatMessages(prev => [...prev, savedMsg]);
+        }
       } catch (err) {
         console.error("Erreur d'envoi du message de chat général:", err);
       } finally {
@@ -847,7 +869,13 @@ export default function CandidateDashboard({
       }
     } else {
       try {
-        await onSendMessage(chatInput.trim(), chatAttachment || undefined);
+        const newMsg = await onSendMessage(chatInput.trim(), chatAttachment || undefined);
+        if (newMsg) {
+          setAllUserMessages(prev => {
+            if (prev.some(m => m.id === newMsg.id)) return prev;
+            return [...prev, newMsg].sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+          });
+        }
       } finally {
         setIsSendingChat(false);
         setChatInput("");
